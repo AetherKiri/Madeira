@@ -27,6 +27,16 @@ cleanup rather than claimed as the 30 FPS fix. Release builds disable QEMU's
 trace backend (`trace_backends=nop`) because Madeira-SE does not expose QEMU
 trace logging to the app.
 
+The TCTI soft-MMU fast path now matches the locked QEMU layout. Its four
+current `CPUTLBDescFast` entries are addressed at -272, -256, -240 and -224
+bytes from the negative-offset CPU state; the older gadget set only covered
+the -32 through -128 cases and therefore sent these accesses through the C
+slow path. Madeira-SE emits precompiled gadget variants for all four entries
+and branches to the slow path when a table is still unallocated. On the same
+A7 payload, the final 40-second run measured 3.93 DXMT Present FPS versus the
+3.06 safe-build result (about 28%); it remains below the 30 FPS target and is
+guarded by the full i386/x86-64 DXMT regression suite.
+
 The samples show the CPU-side TCTI interpreter as the limiting resource:
 `cpu_tb_exec`, `tcg_qemu_tb_exec`, and the generated AArch64 gadget calls
 dominate the busy thread. DXMT reports no drawable wait or Metal command queue
