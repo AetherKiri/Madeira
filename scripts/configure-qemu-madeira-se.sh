@@ -117,6 +117,7 @@ if ! (
         --disable-qom-cast-debug \
         -Doptimization=3 \
         -Dmadeira_se_performance=true \
+        -Dtrace_backends=nop \
         "${qemu_lto_args[@]+${qemu_lto_args[@]}}" \
         --extra-cflags="-I$REPO_ROOT/madeira-se/include" \
         --without-default-devices \

@@ -360,3 +360,44 @@ index ebed824..6e134b3 100755
  
  
  
+diff --git a/include/tcg/tcg.h b/include/tcg/tcg.h
+index 74f0c75..6bfd0eb 100644
+--- a/include/tcg/tcg.h
++++ b/include/tcg/tcg.h
+@@ -473,6 +473,12 @@ static inline const void *tcg_splitwx_to_rx(void *rw)
+ static inline void *tcg_splitwx_to_rw(const void *rx)
+ {
++#ifdef CONFIG_TCG_THREADED_INTERPRETER
++    /* TCTI stores its threaded bytecode in one RW mapping; no split-WX
++     * address conversion or NULL branch is needed on the TB return path. */
++    return (void *)rx;
++#else
+     return rx ? (void *)rx - tcg_splitwx_diff : NULL;
++#endif
+ }
+ #endif
+
+diff --git a/include/tcg/tcg-apple-jit.h b/include/tcg/tcg-apple-jit.h
+index 7f25dab..5fc1219 100644
+--- a/include/tcg/tcg-apple-jit.h
++++ b/include/tcg/tcg-apple-jit.h
+@@ -86,6 +86,9 @@ static __attribute__((__always_inline__)) void jit_write_protect(int enabled)
+ static inline void qemu_thread_jit_execute(void)
+ {
++#if !defined(CONFIG_TCG_INTERPRETER) && \
++    !defined(CONFIG_TCG_THREADED_INTERPRETER)
+     if (jit_write_protect_supported()) {
+         jit_write_protect(true);
+     }
++#endif
+ }
+@@ -96,6 +96,9 @@ static inline void qemu_thread_jit_write(void)
+ static inline void qemu_thread_jit_write(void)
+ {
++#if !defined(CONFIG_TCG_INTERPRETER) && \
++    !defined(CONFIG_TCG_THREADED_INTERPRETER)
+     if (jit_write_protect_supported()) {
+         jit_write_protect(false);
+     }
++#endif
+ }
