@@ -12,6 +12,13 @@ the comparable 40-second runs measured 3.05 to 3.42 Present FPS. The result is
 still below the 30 FPS target, but it removes a repeated 1 KiB stack clear from
 the hottest TCTI entry path without weakening the rest of QEMU's hardening.
 
+The same entry path now caches the host TLS slot used by helper return
+addresses in QEMU's CPU state. A warm i386 backend probe improved from a
+median of roughly 6.75 ms to 6.62 ms for two million guest instructions
+(about 1.8%). The A7 title remains dominated by guest work and showed no
+material FPS change, but the cache removes one macOS TLS accessor from every
+translation-block entry while the CPU thread remains fixed.
+
 The samples show the CPU-side TCTI interpreter as the limiting resource:
 `cpu_tb_exec`, `tcg_qemu_tb_exec`, and the generated AArch64 gadget calls
 dominate the busy thread. DXMT reports no drawable wait or Metal command queue
