@@ -26,6 +26,12 @@ stall during the measured window. The title also performs a long asset and
 script phase before it settles into its menu, so Present FPS is reported from
 the native DXMT Present counter rather than inferred from GPU timing.
 
+With `MADEIRA_SE_PERF_STATS=1`, one active A7 title window counted about
+1.59 billion guest instructions and 174.8 million TCTI TB entries, while only
+245 thousand TBs needed translation. The translated TBs covered about 1.38
+million static instructions, so the cost is repeated interpretation of a
+small translated working set rather than translation or Metal submission.
+
 An executable-page-only translation invalidation experiment was measured and
 discarded. Some titles use dirty notifications while changing code protection;
 filtering those notifications reduced the title's draw count and lowered the
