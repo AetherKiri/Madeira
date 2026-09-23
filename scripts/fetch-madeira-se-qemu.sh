@@ -8,7 +8,7 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 LOCK_FILE="$REPO_ROOT/madeira-se/deps/qemu-tcti.lock"
 DESTINATION="${MADEIRA_SE_QEMU_SOURCE:-$REPO_ROOT/.deps/qemu-utm}"
 PATCH_SCRIPT="$REPO_ROOT/scripts/apply-qemu-madeira-se-patch.sh"
-PATCH_FILE="$REPO_ROOT/madeira-se/patches/qemu-tcti/0001-madeira-se-embedded-tcti-adapter.patch"
+PATCH_DIR="$REPO_ROOT/madeira-se/patches/qemu-tcti"
 
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 [destination]" >&2
@@ -45,10 +45,15 @@ if [[ "$actual_remote" != "$QEMU_REPOSITORY" ]]; then
     exit 1
 fi
 if [[ -n "$(git -C "$DESTINATION" status --porcelain)" ]]; then
-    if git -C "$DESTINATION" apply --reverse --check "$PATCH_FILE" \
-            >/dev/null 2>&1; then
-        git -C "$DESTINATION" apply --reverse "$PATCH_FILE"
-    fi
+    shopt -s nullglob
+    patches=("$PATCH_DIR"/*.patch)
+    for ((index=${#patches[@]} - 1; index >= 0; index--)); do
+        patch_file="${patches[$index]}"
+        if git -C "$DESTINATION" apply --reverse --check "$patch_file" \
+                >/dev/null 2>&1; then
+            git -C "$DESTINATION" apply --reverse "$patch_file"
+        fi
+    done
     if [[ -n "$(git -C "$DESTINATION" status --porcelain)" ]]; then
         echo "error: QEMU checkout has unexpected local changes: $DESTINATION" >&2
         exit 1

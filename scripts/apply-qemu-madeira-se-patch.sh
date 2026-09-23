@@ -6,7 +6,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 QEMU_SOURCE="${MADEIRA_SE_QEMU_SOURCE:-$REPO_ROOT/.deps/qemu-utm}"
-PATCH_FILE="$REPO_ROOT/madeira-se/patches/qemu-tcti/0001-madeira-se-embedded-tcti-adapter.patch"
+PATCH_DIR="$REPO_ROOT/madeira-se/patches/qemu-tcti"
 
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 [qemu-source]" >&2
@@ -20,19 +20,41 @@ if ! git -C "$QEMU_SOURCE" rev-parse --is-inside-work-tree \
     echo "error: QEMU source is not a Git checkout: $QEMU_SOURCE" >&2
     exit 1
 fi
-if [[ ! -f "$PATCH_FILE" ]]; then
-    echo "error: Madeira-SE QEMU patch is missing: $PATCH_FILE" >&2
+if [[ ! -f "$PATCH_DIR/0001-madeira-se-embedded-tcti-adapter.patch" ]]; then
+    echo "error: Madeira-SE QEMU adapter patch is missing: $PATCH_DIR" >&2
     exit 1
 fi
 
-if git -C "$QEMU_SOURCE" apply --check "$PATCH_FILE" >/dev/null 2>&1; then
-    git -C "$QEMU_SOURCE" apply "$PATCH_FILE"
-    echo "Applied Madeira-SE QEMU embedding adapter."
-elif git -C "$QEMU_SOURCE" apply --reverse --check "$PATCH_FILE" \
-        >/dev/null 2>&1; then
-    echo "Madeira-SE QEMU embedding adapter is already applied."
-else
-    echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
-    echo "checkout: $QEMU_SOURCE" >&2
+shopt -s nullglob
+patches=("$PATCH_DIR"/*.patch)
+if [[ ${#patches[@]} -eq 0 ]]; then
+    echo "error: no Madeira-SE QEMU patches found: $PATCH_DIR" >&2
     exit 1
 fi
+
+for patch_file in "${patches[@]}"; do
+    patch_name="$(basename "$patch_file")"
+    if git -C "$QEMU_SOURCE" apply --check "$patch_file" >/dev/null 2>&1; then
+        git -C "$QEMU_SOURCE" apply "$patch_file"
+        echo "Applied Madeira-SE QEMU patch: $patch_name"
+    elif git -C "$QEMU_SOURCE" apply --reverse --check "$patch_file" \
+            >/dev/null 2>&1; then
+        echo "Madeira-SE QEMU patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0001-madeira-se-embedded-tcti-adapter.patch" ]] \
+            && [[ -f "$QEMU_SOURCE/system/madeira-se.c" ]] \
+            && grep -q "Madeira-SE embedded x86/TCTI execution adapter" \
+                "$QEMU_SOURCE/system/madeira-se.c" \
+            && grep -q "madeira_se_qemu_tcti_backend" \
+                "$QEMU_SOURCE/system/madeira-se.c"; then
+        # A later patch may have changed the adapter's new files, which makes
+        # git apply's reverse check too strict. The adapter marker is only
+        # accepted after the forward and reverse checks have both failed, so
+        # partially applied patches still stop with an error below.
+        echo "Madeira-SE QEMU embedding adapter is already applied: $patch_name"
+    else
+        echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
+        echo "patch: $patch_name" >&2
+        echo "checkout: $QEMU_SOURCE" >&2
+        exit 1
+    fi
+done

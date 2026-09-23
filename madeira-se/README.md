@@ -52,9 +52,9 @@ cmake --build build/madeira-se-core --parallel 2 --target madeira-se-run
   --exe build/madeira-se-gui-smoke/fps-smoke-i386.exe \
   --duration 15 --warmup 2
 
-# Exercise the d9mt-derived D3D9 -> Metal path explicitly.  The FPS parser
-# still uses Wine's +fps channel, so a DXMT run is primarily a startup and
-# stability probe; DXMT's native Present counter is reported in run.log.
+# Exercise the d9mt-derived D3D9 -> Metal path explicitly.  DXMT's native
+# Present counter is reported in run.log and is used when the title does not
+# go through Wine's OpenGL swap counter.
 ./scripts/run-madeira-se-fps.sh \
   --exe build/madeira-se-gui-smoke/fps-smoke-i386.exe \
   --d3d9-backend dxmt --duration 15 --warmup 2
@@ -210,10 +210,13 @@ The regression payloads use exit 43 for GUI, 47 for audio and 49 for a
 D3D11 render-target submission. Those are success sentinels for the smoke
 programs, not application exit-code conventions.
 
-The QEMU revision is locked in `deps/qemu-tcti.lock`. Madeira-SE uses the full
-QEMU x86 translator and TCG implementation. TCTI emits queues of pointers to
-precompiled AArch64 gadgets, so it does not allocate JIT code pages or generate
-new executable instructions at runtime.
+The QEMU revision is locked in `deps/qemu-tcti.lock`. The fetch step applies
+the ordered patches in `patches/qemu-tcti/`: the first embeds the x86/TCTI
+adapter, and the second adds no-JIT throughput counters plus the Darwin TCTI
+temporary-frame optimization. Madeira-SE uses the full QEMU x86 translator and
+TCG implementation. TCTI emits queues of pointers to precompiled AArch64
+gadgets, so it does not allocate JIT code pages or generate new executable
+instructions at runtime.
 
 The QEMU build emits `libqemu-i386-softmmu.dylib` and
 `libqemu-x86_64-softmmu.dylib`; Madeira-SE embeds their CPU/TCG pieces and uses

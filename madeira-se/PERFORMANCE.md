@@ -1,0 +1,32 @@
+# Madeira-SE performance notes
+
+The current performance gate uses the A7-3 PE32 title with the DXMT D3D9 to
+Metal path at 1280x720. The runner uses the compatibility-safe defaults:
+resident TCTI context reuse is disabled, the CPU slice budget is 8,000,000
+guest instructions, and the presentation cap is 30 FPS.
+
+On the Apple Silicon development host, the baseline run before the TCTI
+temporary-frame change measured about 2.44 Present FPS. After marking the
+per-TB temporary array uninitialized, while retaining Clang's stack protector,
+the comparable 40-second runs measured 3.05 to 3.42 Present FPS. The result is
+still below the 30 FPS target, but it removes a repeated 1 KiB stack clear from
+the hottest TCTI entry path without weakening the rest of QEMU's hardening.
+
+The samples show the CPU-side TCTI interpreter as the limiting resource:
+`cpu_tb_exec`, `tcg_qemu_tb_exec`, and the generated AArch64 gadget calls
+dominate the busy thread. DXMT reports no drawable wait or Metal command queue
+stall during the measured window. The title also performs a long asset and
+script phase before it settles into its menu, so Present FPS is reported from
+the native DXMT Present counter rather than inferred from GPU timing.
+
+An executable-page-only translation invalidation experiment was measured and
+discarded. Some titles use dirty notifications while changing code protection;
+filtering those notifications reduced the title's draw count and lowered the
+measured Present rate. The shipping path therefore keeps the conservative
+invalidation behavior for compatibility.
+
+The next performance work should target TCTI dispatch and translation-cache
+reuse with per-title regression coverage. Reaching 30 FPS for this workload
+requires roughly an order of magnitude more CPU throughput; changing the
+Metal presentation path alone cannot provide that gain. All proposed changes
+must keep the no-runtime-code-generation policy required by the App Store.
