@@ -18,31 +18,31 @@ set -e
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
+source "$REPO_ROOT/build/native-platform.sh"
 SRC_DIR="$BUILD_DIR/src"
-OBJ_DIR="$BUILD_DIR/obj"
-PREFIX="$REPO_ROOT/toolchains/gnutls-ios"
+OBJ_DIR="$BUILD_DIR/obj$NATIVE_SUFFIX"
+PREFIX="$REPO_ROOT/toolchains/gnutls-$MADEIRA_PLATFORM"
 
 GMP_VER=6.3.0
 NETTLE_VER=3.10.1
 GNUTLS_VER=3.8.9
 
-SDK=$(xcrun --sdk iphoneos --show-sdk-path)
 CLANG=$(xcrun -f clang)
-HOSTFLAGS="-arch arm64 -isysroot $SDK -miphoneos-version-min=17.0"
+HOSTFLAGS="${NATIVE_FLAGS[*]}"
 
 export CC="$CLANG $HOSTFLAGS"
 export CXX="$(xcrun -f clang++) $HOSTFLAGS"
 export CFLAGS="-O2"
-export AR=$(xcrun -sdk iphoneos -f ar)
-export RANLIB=$(xcrun -sdk iphoneos -f ranlib)
-export STRIP=$(xcrun -sdk iphoneos -f strip)
+export AR=$(xcrun -sdk "$SDK_NAME" -f ar)
+export RANLIB=$(xcrun -sdk "$SDK_NAME" -f ranlib)
+export STRIP=$(xcrun -sdk "$SDK_NAME" -f strip)
 export CC_FOR_BUILD="$CLANG -isysroot $(xcrun --sdk macosx --show-sdk-path)"
 export PKG_CONFIG_PATH="$PREFIX/lib/pkgconfig"
 # Configure probes must not find Homebrew libs meant for macOS.
 export PKG_CONFIG_LIBDIR="$PREFIX/lib/pkgconfig"
 
 HOST=aarch64-apple-darwin
-JOBS=$(sysctl -n hw.ncpu)
+JOBS=${MADEIRA_JOBS:-6}
 
 mkdir -p "$OBJ_DIR" "$PREFIX"
 
@@ -112,3 +112,5 @@ echo
 echo "=== static libs in $PREFIX/lib ==="
 ls -la "$PREFIX/lib/"*.a
 lipo -info "$PREFIX/lib/libgnutls.a" 2>/dev/null || true
+cp "$PREFIX/lib/libgnutls.a" "$PREFIX/lib/libhogweed.a" \
+   "$PREFIX/lib/libnettle.a" "$PREFIX/lib/libgmp.a" "$NATIVE_LIB_DIR/"

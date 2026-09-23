@@ -114,7 +114,7 @@ static bool is_in_jit_pool(void *addr) {
 static bool jit_pool_init(void) {
     if (g_jit_rx_base) return true; // Already initialized
 
-    if (!jit_check_debugged()) {
+    if (!jit_is_available()) {
         fex_log("Cannot init JIT pool: debugger not attached");
         return false;
     }

@@ -1,0 +1,5 @@
+# Madeira-SE builds against UTM's QEMU fork because upstream QEMU does not
+# carry the aarch64-tcti backend used by UTM SE.
+QEMU_REPOSITORY=https://github.com/utmapp/qemu.git
+QEMU_BRANCH=utm-edition
+QEMU_COMMIT=b795d6de88fc52cb6ff061e0e034be51d8e9c474

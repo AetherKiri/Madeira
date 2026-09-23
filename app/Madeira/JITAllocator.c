@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <mach-o/dyld.h>
 #include <os/log.h>
+#include <TargetConditionals.h>
 
 // csops syscall - used to check CS_DEBUGGED flag
 #ifndef CS_DEBUGGED
@@ -98,6 +99,31 @@ JITRegion *jit_region_create(size_t size) {
     region->size = size;
     region->mem_entry = MACH_PORT_NULL;
 
+#if TARGET_OS_MACCATALYST
+    // Keep separate writable and executable aliases, as expected by FEX and
+    // the PE loader. The Mac app is signed with allow-unsigned-executable-memory.
+    void *rx = mmap(NULL, size, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANON, -1, 0);
+    if (rx == MAP_FAILED) {
+        free(region);
+        return NULL;
+    }
+    vm_address_t rw = 0;
+    vm_prot_t current = 0, maximum = 0;
+    kern_return_t result = vm_remap(mach_task_self(), &rw, size, 0,
+        VM_FLAGS_ANYWHERE, mach_task_self(), (vm_address_t)rx, FALSE,
+        &current, &maximum, VM_INHERIT_NONE);
+    if (result != KERN_SUCCESS || mprotect(rx, size, PROT_READ | PROT_EXEC) != 0) {
+        jit_log("Mac JIT mapping failed: kr=%d errno=%d", result, errno);
+        if (rw) vm_deallocate(mach_task_self(), rw, size);
+        munmap(rx, size);
+        free(region);
+        return NULL;
+    }
+    region->rx_ptr = rx;
+    region->rw_ptr = (void *)rw;
+    return region;
+#else
     kern_return_t kr;
     mach_port_t task = mach_task_self();
 
@@ -207,6 +233,7 @@ JITRegion *jit_region_create(size_t size) {
     jit_log("Dual-mapped JIT region created: size=%zu, RW=%p, RX=%p", size, region->rw_ptr, region->rx_ptr);
 
     return region;
+#endif
 }
 
 // ml358: make an ALREADY-MAPPED region jetsam-exempt.
@@ -378,6 +405,10 @@ static void sigtrap_handler(int sig, siginfo_t *info, void *context) {
 }
 
 void jit_install_trap_handler(void) {
+#if TARGET_OS_MACCATALYST
+    // Native JIT uses Mach mappings, so there is no debugger BRK protocol.
+    return;
+#endif
     // Only install if no debugger is attached.
     // When StikDebug is attached, it handles BRK/SIGTRAP directly.
     // Our handler would steal signals from the debugger and break the protocol.
@@ -401,6 +432,23 @@ void jit_install_trap_handler(void) {
 
 __attribute__((noinline, optnone))
 void *jit26_prepare_region(void *addr, size_t len) {
+#if TARGET_OS_MACCATALYST
+    if (!len) return NULL;
+    len = align_to_page(len);
+    bool allocated = addr == NULL;
+    if (allocated) {
+        // Hint above the low-address dispatcher range; never replace mappings.
+        addr = mmap((void *)0x200000000ULL, len, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANON, -1, 0);
+        if (addr == MAP_FAILED) return NULL;
+    }
+    if (mprotect(addr, len, PROT_READ | PROT_EXEC) != 0) {
+        jit_log("Mac JIT protection failed: %s", strerror(errno));
+        if (allocated) munmap(addr, len);
+        return NULL;
+    }
+    return addr;
+#else
     register void *x0 __asm__("x0") = addr;
     register size_t x1 __asm__("x1") = len;
     __asm__ volatile(
@@ -411,15 +459,37 @@ void *jit26_prepare_region(void *addr, size_t len) {
         : "x16", "memory"
     );
     return x0;
+#endif
 }
 
 __attribute__((noinline, optnone))
 void jit26_detach(void) {
+#if !TARGET_OS_MACCATALYST
     __asm__ volatile(
         "mov x16, #0\n"
         "brk #0xf00d\n"
         ::: "x16", "memory"
     );
+#endif
+}
+
+#if TARGET_OS_MACCATALYST
+static pthread_once_t mac_jit_once = PTHREAD_ONCE_INIT;
+static bool mac_jit_available;
+static void check_mac_jit(void) {
+    JITRegion *region = jit_region_create(JIT_PAGE_SIZE);
+    mac_jit_available = region != NULL;
+    jit_region_destroy(region);
+}
+#endif
+
+bool jit_is_available(void) {
+#if TARGET_OS_MACCATALYST
+    pthread_once(&mac_jit_once, check_mac_jit);
+    return mac_jit_available;
+#else
+    return jit_check_debugged();
+#endif
 }
 
 bool jit_check_debugged(void) {
@@ -521,7 +591,7 @@ int64_t jit_test_execute(void) {
     jit_log("=== JIT Execution Test ===");
 
     // Check CS_DEBUGGED first
-    if (!jit_check_debugged()) {
+    if (!jit_is_available()) {
         jit_log("FAIL: CS_DEBUGGED not set. Attach debugger first.");
         return -2;
     }
@@ -606,7 +676,7 @@ int64_t jit_test_execute(void) {
 int64_t jit_test_execute_strategy2(void) {
     jit_log("--- Strategy 2: Debugger-allocated RX + vm_remap RW (MeloNX approach) ---");
 
-    if (!jit_check_debugged()) {
+    if (!jit_is_available()) {
         jit_log("FAIL: CS_DEBUGGED not set. Attach debugger first.");
         return -2;
     }

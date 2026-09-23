@@ -15,7 +15,7 @@ set -e
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
 WINE_SRC="$REPO_ROOT/wine"
-GNUTLS_LIB="$REPO_ROOT/toolchains/gnutls-ios/lib/libgnutls.a"
+GNUTLS_LIB="$REPO_ROOT/toolchains/gnutls-${MADEIRA_PLATFORM:-ios}/lib/libgnutls.a"
 OUT="$BUILD_DIR/gnutls_symtab_ios.c"
 
 SOURCES=(

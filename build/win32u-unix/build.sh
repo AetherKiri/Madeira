@@ -10,12 +10,12 @@ set -e
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
+source "$REPO_ROOT/build/native-platform.sh"
 WINE_SRC="$REPO_ROOT/wine"
 WINE_BUILD="$WINE_SRC/build-macos"
 NTDLL_SHIMS="$REPO_ROOT/build/ntdll-unix/shims"
-SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-OBJ_DIR="$BUILD_DIR/obj"
-APP_LIB="$REPO_ROOT/app/Madeira/libwin32u_unix.a"
+OBJ_DIR="$BUILD_DIR/obj$NATIVE_SUFFIX"
+APP_LIB="$NATIVE_LIB_DIR/libwin32u_unix.a"
 
 mkdir -p "$OBJ_DIR"
 
@@ -24,6 +24,7 @@ FAILED=0
 FAILED_FILES=""
 
 FREETYPE_DIR="$REPO_ROOT/build/freetype-ios"
+FREETYPE_BUILD="$FREETYPE_DIR/build$NATIVE_SUFFIX"
 
 compile_one() {
     local src=$1
@@ -31,8 +32,7 @@ compile_one() {
     shift 2
     echo -n "  $name... "
 
-    if xcrun -sdk iphoneos clang \
-        -arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 \
+    if xcrun -sdk "$SDK_NAME" clang "${NATIVE_FLAGS[@]}" \
         -O2 -fPIC -fvisibility=hidden -fno-stack-protector -fno-strict-aliasing \
         -Wno-implicit-function-declaration -Wno-int-conversion \
         -include "$BUILD_DIR/config_ios.h" \
@@ -110,7 +110,7 @@ for src in $WINE_SRC/dlls/win32u/*.c $WINE_SRC/dlls/win32u/dibdrv/*.c; do
             # re-defines HAVE_FT2BUILD_H itself; config_ios.h's #undefs win
             # for every other TU.
             compile_one "$BUILD_DIR/freetype_ios.c" "freetype" \
-                -I"$FREETYPE_DIR/build/include" \
+                -I"$FREETYPE_BUILD/include" \
                 -I"$REPO_ROOT/research/freetype/include"
             continue
             ;;
@@ -136,9 +136,9 @@ echo "=== Building libwin32u_unix.a ==="
 ar rcs "$OBJ_DIR/libwin32u_unix.a" "$OBJ_DIR"/*.o
 
 # Merge the static freetype so the app link needs no project changes.
-if [ -f "$FREETYPE_DIR/build/libfreetype.a" ]; then
+if [ -f "$FREETYPE_BUILD/libfreetype.a" ]; then
     libtool -static -o "$OBJ_DIR/libwin32u_unix.a" \
-        "$OBJ_DIR/libwin32u_unix.a" "$FREETYPE_DIR/build/libfreetype.a" 2>/dev/null
+        "$OBJ_DIR/libwin32u_unix.a" "$FREETYPE_BUILD/libfreetype.a" 2>/dev/null
     echo "merged libfreetype.a"
 else
     echo "WARNING: no libfreetype.a — fonts will be disabled"

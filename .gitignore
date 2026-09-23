@@ -20,13 +20,25 @@ research/Winlator-Ludashi/
 research/*.md
 
 # Build artifacts
+.deps/
 app/build/
 app/DerivedData/
 build/DerivedData/
 build/xcode-derived/
 FEX/build-ios/
+FEX/build-maccatalyst/
+build/maccatalyst/
+build/*/obj-maccatalyst/
+build/*/build-maccatalyst/
+build/freetype-ios/build/
 build/ntdll-unix/obj/
 build/wineserver/obj/
+
+# Persistent Madeira-SE build trees and regression artifacts.
+build/madeira-se-*/
+build/madeira-se-*.log
+build/fps-*/
+build/madeira-se-qemu-build.log.*
 
 # Compiled libraries (rebuilt from build scripts)
 app/Madeira/libntdll_unix.a

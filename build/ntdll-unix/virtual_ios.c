@@ -41,7 +41,7 @@
 #include <pthread.h>
 #include <sys/ioctl.h>
 #ifdef WINE_IOS
-/* Minimal Mach API decls to avoid <mach/mach.h>'s host_page_size symbol
+/* Minimal Mach API decls to avoid <mach/mach.h>'s wine_host_page_size symbol
  * clash with our static var of the same name. */
 typedef int kern_return_t;
 typedef unsigned int mach_port_t;
@@ -88,13 +88,13 @@ extern kern_return_t vm_protect(mach_port_t target_task, vm_address_t address,
 # include <valgrind/valgrind.h>
 #endif
 #if defined(__APPLE__)
-#define host_page_size mac_host_page_size
+#define wine_host_page_size mac_host_page_size
 # include <mach/mach_init.h>
 # include <mach/mach_vm.h>
 # include <mach/task.h>
 # include <mach/thread_state.h>
 # include <mach/vm_map.h>
-#undef host_page_size
+#undef wine_host_page_size
 #endif
 
 #if defined(HAVE_LINUX_USERFAULTFD_H) && defined(HAVE_LINUX_FS_H)
@@ -4140,10 +4140,10 @@ static const UINT_PTR page_mask = 0xfff;
 static const UINT_PTR granularity_mask = 0xffff;
 
 #ifdef __aarch64__
-static UINT_PTR host_page_size;
+static UINT_PTR wine_host_page_size;
 static UINT_PTR host_page_mask;
 #else
-static const UINT_PTR host_page_size = 0x1000;
+static const UINT_PTR wine_host_page_size = 0x1000;
 static const UINT_PTR host_page_mask = 0xfff;
 #endif
 
@@ -4951,7 +4951,7 @@ static void kernel_get_write_watches( void *base, SIZE_T size, void **buffer, UL
     SIZE_T buffer_len = *count;
     char *addr, *next_addr;
     int rgn_count, i;
-    size_t end, granularity = host_page_size / page_size;
+    size_t end, granularity = wine_host_page_size / page_size;
 
     assert( !(size & page_mask) );
 
@@ -5907,7 +5907,7 @@ static BYTE get_host_page_vprot( const void *addr )
 #else
     vprot_ptr = pages_vprot + idx;
 #endif
-    for (i = 0; i < host_page_size / page_size; i++) vprot |= vprot_ptr[i];
+    for (i = 0; i < wine_host_page_size / page_size; i++) vprot |= vprot_ptr[i];
     return vprot;
 }
 
@@ -9090,17 +9090,17 @@ static int mprotect_range( void *base, size_t size, BYTE set, BYTE clear )
 
     vprot = get_host_page_vprot( addr );
     prot = get_unix_prot( (vprot & ~clear) | set );
-    for (count = i = 1; i < size / host_page_size; i++, count++)
+    for (count = i = 1; i < size / wine_host_page_size; i++, count++)
     {
-        vprot = get_host_page_vprot( addr + count * host_page_size );
+        vprot = get_host_page_vprot( addr + count * wine_host_page_size );
         next = get_unix_prot( (vprot & ~clear) | set );
         if (next == prot) continue;
-        if (mprotect_exec( addr, count * host_page_size, prot )) return -1;
-        addr += count * host_page_size;
+        if (mprotect_exec( addr, count * wine_host_page_size, prot )) return -1;
+        addr += count * wine_host_page_size;
         prot = next;
         count = 0;
     }
-    return mprotect_exec( addr, count * host_page_size, prot );
+    return mprotect_exec( addr, count * wine_host_page_size, prot );
 }
 
 
@@ -10675,10 +10675,10 @@ static NTSTATUS allocate_dos_memory( struct file_view **view, unsigned int vprot
 
     if (mmap_is_in_reserved_area( NULL, 0x10000 ) != 1)
     {
-        addr = anon_mmap_tryfixed( (void *)host_page_size, 0x10000 - host_page_size, unix_prot, 0 );
+        addr = anon_mmap_tryfixed( (void *)wine_host_page_size, 0x10000 - wine_host_page_size, unix_prot, 0 );
         if (addr != MAP_FAILED)
         {
-            if (!anon_mmap_fixed( NULL, host_page_size, unix_prot, 0 ))
+            if (!anon_mmap_fixed( NULL, wine_host_page_size, unix_prot, 0 ))
             {
                 addr = NULL;
                 TRACE( "successfully mapped low 64K range\n" );
@@ -10816,11 +10816,11 @@ static void *get_host_addr_space_limit(void)
 
     while (addr >> 32)
     {
-        void *ret = mmap( (void *)addr, host_page_size, PROT_NONE, flags, -1, 0 );
+        void *ret = mmap( (void *)addr, wine_host_page_size, PROT_NONE, flags, -1, 0 );
         if (ret != MAP_FAILED)
         {
-            ios_pool_va_warn( "munmap", ret, host_page_size );
-            munmap( ret, host_page_size );
+            ios_pool_va_warn( "munmap", ret, wine_host_page_size );
+            munmap( ret, wine_host_page_size );
             if (ret >= (void *)addr) break;
         }
         else if (errno == EEXIST) break;
@@ -11900,9 +11900,9 @@ void virtual_init(void)
     pthread_mutexattr_destroy( &attr );
 
 #ifdef __aarch64__
-    host_page_size = sysconf( _SC_PAGESIZE );
-    host_page_mask = host_page_size - 1;
-    TRACE( "host page size: %uk\n", (UINT)host_page_size / 1024 );
+    wine_host_page_size = sysconf( _SC_PAGESIZE );
+    host_page_mask = wine_host_page_size - 1;
+    TRACE( "host page size: %uk\n", (UINT)wine_host_page_size / 1024 );
 #endif
 
 #ifdef _WIN64
@@ -12696,10 +12696,10 @@ NTSTATUS virtual_alloc_thread_stack( INITIAL_TEB *stack, ULONG_PTR limit_low, UL
     /* setup no access guard page */
     if (guard_page)
     {
-        set_page_vprot( view->base, host_page_size, 0 );
-        set_page_vprot( (char *)view->base + host_page_size, host_page_size,
+        set_page_vprot( view->base, wine_host_page_size, 0 );
+        set_page_vprot( (char *)view->base + wine_host_page_size, wine_host_page_size,
                         VPROT_READ | VPROT_WRITE | VPROT_COMMITTED | VPROT_GUARD );
-        mprotect_range( view->base, 2 * host_page_size , 0, 0 );
+        mprotect_range( view->base, 2 * wine_host_page_size , 0, 0 );
     }
     VIRTUAL_DEBUG_DUMP_VIEW( view );
 
@@ -12708,7 +12708,7 @@ NTSTATUS virtual_alloc_thread_stack( INITIAL_TEB *stack, ULONG_PTR limit_low, UL
     stack->OldStackLimit = 0;
     stack->DeallocationStack = view->base;
     stack->StackBase = (char *)view->base + view->size;
-    stack->StackLimit = (char *)view->base + (guard_page ? 2 * host_page_size : 0);
+    stack->StackLimit = (char *)view->base + (guard_page ? 2 * wine_host_page_size : 0);
 done:
     server_leave_uninterrupted_section( &virtual_mutex, &sigset );
     return status;
@@ -12814,7 +12814,7 @@ static BOOL is_inside_thread_stack( void *ptr, struct thread_stack_info *stack )
 {
     TEB *teb = NtCurrentTeb();
     WOW_TEB *wow_teb = get_wow_teb( teb );
-    size_t min_guaranteed = max( page_size * (is_win64 ? 2 : 1), host_page_size );
+    size_t min_guaranteed = max( page_size * (is_win64 ? 2 : 1), wine_host_page_size );
 
     stack->start = teb->DeallocationStack;
     stack->limit = teb->Tib.StackLimit;
@@ -12840,16 +12840,16 @@ static NTSTATUS grow_thread_stack( char *page, struct thread_stack_info *stack_i
 {
     NTSTATUS ret = 0;
 
-    set_page_vprot_bits( page, host_page_size, VPROT_COMMITTED, VPROT_GUARD );
-    mprotect_range( page, host_page_size, 0, 0 );
-    if (page >= stack_info->start + host_page_size + stack_info->guaranteed)
+    set_page_vprot_bits( page, wine_host_page_size, VPROT_COMMITTED, VPROT_GUARD );
+    mprotect_range( page, wine_host_page_size, 0, 0 );
+    if (page >= stack_info->start + wine_host_page_size + stack_info->guaranteed)
     {
-        set_page_vprot_bits( page - host_page_size, host_page_size, VPROT_COMMITTED | VPROT_GUARD, 0 );
-        mprotect_range( page - host_page_size, host_page_size, 0, 0 );
+        set_page_vprot_bits( page - wine_host_page_size, wine_host_page_size, VPROT_COMMITTED | VPROT_GUARD, 0 );
+        mprotect_range( page - wine_host_page_size, wine_host_page_size, 0, 0 );
     }
     else  /* inside guaranteed space -> overflow exception */
     {
-        page = stack_info->start + host_page_size;
+        page = stack_info->start + wine_host_page_size;
         set_page_vprot_bits( page, stack_info->guaranteed, VPROT_COMMITTED, VPROT_GUARD );
         mprotect_range( page, stack_info->guaranteed, 0, 0 );
         ret = STATUS_STACK_OVERFLOW;
@@ -12892,8 +12892,8 @@ NTSTATUS virtual_handle_fault( EXCEPTION_RECORD *rec, void *stack )
         struct thread_stack_info stack_info;
         if (!is_inside_thread_stack( page, &stack_info ))
         {
-            set_page_vprot_bits( page, host_page_size, 0, VPROT_GUARD );
-            mprotect_range( page, host_page_size, 0, 0 );
+            set_page_vprot_bits( page, wine_host_page_size, 0, VPROT_GUARD );
+            mprotect_range( page, wine_host_page_size, 0, 0 );
             ret = STATUS_GUARD_PAGE_VIOLATION;
         }
         else ret = grow_thread_stack( page, &stack_info );
@@ -12910,8 +12910,8 @@ NTSTATUS virtual_handle_fault( EXCEPTION_RECORD *rec, void *stack )
             }
             else
             {
-                set_page_vprot_bits( page, host_page_size, 0, VPROT_WRITEWATCH );
-                mprotect_range( page, host_page_size, 0, 0 );
+                set_page_vprot_bits( page, wine_host_page_size, 0, VPROT_WRITEWATCH );
+                mprotect_range( page, wine_host_page_size, 0, 0 );
             }
         }
         /* ignore fault if page is writable now */
@@ -12964,9 +12964,9 @@ void ios_dump_fault_region( void *addr )
         if (!ios_storm_gate( &fr_storm )) return;
     }
     mutex_lock( &virtual_mutex );
-    vp_prev = get_host_page_vprot( page - host_page_size );
+    vp_prev = get_host_page_vprot( page - wine_host_page_size );
     vp      = get_host_page_vprot( page );
-    vp_next = get_host_page_vprot( page + host_page_size );
+    vp_next = get_host_page_vprot( page + wine_host_page_size );
     view = find_view( addr, 1 );
     if (rx && a >= rx && a < rx + sz) region = "JIT-POOL-RX (exec, RO)";
     else if (rw && a >= rw && a < rw + sz) region = "JIT-POOL-RW (alias)";
@@ -13060,10 +13060,10 @@ void *virtual_setup_exception( void *stack_ptr, size_t size, EXCEPTION_RECORD *r
 
     stack -= size;
 
-    if (stack < stack_info.start + host_page_size)
+    if (stack < stack_info.start + wine_host_page_size)
     {
         /* stack overflow on last page, unrecoverable */
-        UINT diff = stack_info.start + host_page_size - stack;
+        UINT diff = stack_info.start + wine_host_page_size - stack;
         ERR( "stack overflow %u bytes addr %p stack %p (%p-%p-%p)\n",
              diff, rec->ExceptionAddress, stack, stack_info.start, stack_info.limit, stack_info.end );
         abort_thread(1);
@@ -13110,7 +13110,7 @@ void *virtual_setup_exception( void *stack_ptr, size_t size, EXCEPTION_RECORD *r
  *     read the wrong thread. */
 static BOOL is_inside_thread_stack_teb( void *ptr, struct thread_stack_info *stack, TEB *teb )
 {
-    size_t min_guaranteed = max( page_size * (is_win64 ? 2 : 1), host_page_size );
+    size_t min_guaranteed = max( page_size * (is_win64 ? 2 : 1), wine_host_page_size );
 
     stack->start = teb->DeallocationStack;
     stack->limit = teb->Tib.StackLimit;
@@ -13124,16 +13124,16 @@ static NTSTATUS grow_thread_stack_teb( char *page, struct thread_stack_info *sta
 {
     NTSTATUS ret = 0;
 
-    set_page_vprot_bits( page, host_page_size, VPROT_COMMITTED, VPROT_GUARD );
-    mprotect_range( page, host_page_size, 0, 0 );
-    if (page >= stack_info->start + host_page_size + stack_info->guaranteed)
+    set_page_vprot_bits( page, wine_host_page_size, VPROT_COMMITTED, VPROT_GUARD );
+    mprotect_range( page, wine_host_page_size, 0, 0 );
+    if (page >= stack_info->start + wine_host_page_size + stack_info->guaranteed)
     {
-        set_page_vprot_bits( page - host_page_size, host_page_size, VPROT_COMMITTED | VPROT_GUARD, 0 );
-        mprotect_range( page - host_page_size, host_page_size, 0, 0 );
+        set_page_vprot_bits( page - wine_host_page_size, wine_host_page_size, VPROT_COMMITTED | VPROT_GUARD, 0 );
+        mprotect_range( page - wine_host_page_size, wine_host_page_size, 0, 0 );
     }
     else  /* inside guaranteed space -> overflow exception */
     {
-        page = stack_info->start + host_page_size;
+        page = stack_info->start + wine_host_page_size;
         set_page_vprot_bits( page, stack_info->guaranteed, VPROT_COMMITTED, VPROT_GUARD );
         mprotect_range( page, stack_info->guaranteed, 0, 0 );
         ret = STATUS_STACK_OVERFLOW;
@@ -13180,8 +13180,8 @@ NTSTATUS ios_virtual_handle_fault_for_thread( EXCEPTION_RECORD *rec, TEB *teb )
         struct thread_stack_info stack_info;
         if (!is_inside_thread_stack_teb( page, &stack_info, teb ))
         {
-            set_page_vprot_bits( page, host_page_size, 0, VPROT_GUARD );
-            mprotect_range( page, host_page_size, 0, 0 );
+            set_page_vprot_bits( page, wine_host_page_size, 0, VPROT_GUARD );
+            mprotect_range( page, wine_host_page_size, 0, 0 );
             ret = STATUS_GUARD_PAGE_VIOLATION;
         }
         else ret = grow_thread_stack_teb( page, &stack_info, teb );
@@ -13190,8 +13190,8 @@ NTSTATUS ios_virtual_handle_fault_for_thread( EXCEPTION_RECORD *rec, TEB *teb )
     {
         if (vprot & VPROT_WRITEWATCH)
         {
-            set_page_vprot_bits( page, host_page_size, 0, VPROT_WRITEWATCH );
-            mprotect_range( page, host_page_size, 0, 0 );
+            set_page_vprot_bits( page, wine_host_page_size, 0, VPROT_WRITEWATCH );
+            mprotect_range( page, wine_host_page_size, 0, 0 );
         }
         if (get_unix_prot( get_host_page_vprot( page )) & PROT_WRITE)
         {
@@ -13217,7 +13217,7 @@ void *ios_virtual_setup_exception_for_thread( void *stack_ptr, size_t size, EXCE
     }
 
     stack -= size;
-    if (stack < stack_info.start + host_page_size) return NULL;  /* overflow on last page */
+    if (stack < stack_info.start + wine_host_page_size) return NULL;  /* overflow on last page */
     if (stack < stack_info.limit)
     {
         char *page = ROUND_ADDR( stack, host_page_mask );
@@ -13246,7 +13246,7 @@ static NTSTATUS check_write_access( void *base, size_t size, BOOL *has_write_wat
     char *addr = ROUND_ADDR( base, host_page_mask );
 
     size = ROUND_SIZE( base, size, host_page_mask );
-    for (i = 0; i < size; i += host_page_size)
+    for (i = 0; i < size; i += wine_host_page_size)
     {
         BYTE vprot = get_host_page_vprot( addr + i );
         if (vprot & VPROT_WRITEWATCH) *has_write_watch = TRUE;
@@ -13399,11 +13399,11 @@ BOOL virtual_check_buffer_for_read( const void *ptr, SIZE_T size )
         char dummy __attribute__((unused));
         SIZE_T count = size;
 
-        while (count > host_page_size)
+        while (count > wine_host_page_size)
         {
             dummy = *p;
-            p += host_page_size;
-            count -= host_page_size;
+            p += wine_host_page_size;
+            count -= wine_host_page_size;
         }
         dummy = p[0];
         dummy = p[count - 1];
@@ -13432,11 +13432,11 @@ BOOL virtual_check_buffer_for_write( void *ptr, SIZE_T size )
         volatile char *p = ptr;
         SIZE_T count = size;
 
-        while (count > host_page_size)
+        while (count > wine_host_page_size)
         {
             *p |= 0;
-            p += host_page_size;
-            count -= host_page_size;
+            p += wine_host_page_size;
+            count -= wine_host_page_size;
         }
         p[0] |= 0;
         p[count - 1] |= 0;
@@ -13472,7 +13472,7 @@ SIZE_T virtual_uninterrupted_read_memory( const void *addr, void *buffer, SIZE_T
         {
             while (bytes_read < size && (get_unix_prot( get_host_page_vprot( addr )) & PROT_READ))
             {
-                SIZE_T block_size = min( size - bytes_read, host_page_size - ((UINT_PTR)addr & host_page_mask) );
+                SIZE_T block_size = min( size - bytes_read, wine_host_page_size - ((UINT_PTR)addr & host_page_mask) );
                 memcpy( buffer, addr, block_size );
 
                 addr   = (const void *)((const char *)addr + block_size);
@@ -16422,7 +16422,7 @@ static void init_fill_working_set_info_data( struct fill_working_set_info_data *
 {
     d->buffer_start = 0;
     d->buffer_len = 0;
-    d->end_page = (UINT_PTR)end / host_page_size;
+    d->end_page = (UINT_PTR)end / wine_host_page_size;
     memset( d->pm_buffer, 0, sizeof(d->pm_buffer) );
 
     if (pagemap_fd != -2) return;
@@ -16451,7 +16451,7 @@ static void fill_working_set_info( struct fill_working_set_info_data *d, struct 
 
     for (i = 0; i < count; ++i)
     {
-        page = (UINT_PTR)ref[i].addr / host_page_size;
+        page = (UINT_PTR)ref[i].addr / wine_host_page_size;
         p = &info[ref[i].orig_index];
 
         assert(page >= d->buffer_start);

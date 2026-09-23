@@ -40,6 +40,60 @@ git clone --recurse-submodules <this repo>
 Note that `FEX`, `wine` and `research/dxmt` are submodules pointing at forks
 containing the iOS work; upstream clones will not build here.
 
+### Run the macOS graphics demo
+
+The Remote Metal host can run independently on a Mac with a Metal GPU. It
+opens a native window and renders a triangle through the project's transport.
+This validates the graphics backend; it does not launch Windows games or the
+complete Madeira iOS app.
+
+```sh
+./scripts/run-macos-demo.sh          # build, start, and render 600 frames
+./scripts/run-macos-demo.sh status
+./scripts/run-macos-demo.sh test     # protocol, client, rendering, and replay
+./scripts/run-macos-demo.sh stop
+```
+
+The launcher binds to `127.0.0.1:47821`, keeps its token and logs under
+`build/DerivedData/remote-metal/`, and uses `/Applications/Xcode.app` when
+`DEVELOPER_DIR` is unset. The test suites compile their own shader fixture and
+require Apple's Metal Toolchain (`xcodebuild -downloadComponent MetalToolchain`).
+The current client tests expect macOS 15 or later and Apple9 GPU support.
+
+### Madeira-SE standalone runtime (experimental)
+
+The `madeira-se/` tree is the independent runtime boundary being developed for
+the no-JIT App Store path. It does not link AetherKiri or Godot. The standalone
+launcher now executes PE32 and PE32+ Windows programs through the split Wine
+guest trees, QEMU TCTI and DXMT/Metal, with direct headless startup by default.
+AetherKiri remains an optional embedding layer.
+
+```sh
+MADEIRA_SE_BUILD_JOBS=2 ./scripts/test-madeira-se.sh
+./scripts/build-madeira-se-gui-smoke.sh
+./scripts/build-madeira-se-dxmt.sh
+# The regression suite covers both PE32 and PE32+ dynamic D3D11 Map/Unmap and
+# D3D9 Lock/Unlock/Present paths in addition to GUI and audio startup; the
+# D3D9 case also exercises the virtual display-mode compatibility shim.
+./scripts/run-madeira-se-gui-smoke.sh
+# Measure a title's presentation cadence and capture CPU/RSS hotspots.  The
+# harness uses the DXMT-to-Metal path by default and falls back to WGL samples
+# when a title uses Wine's OpenGL path.
+./scripts/run-madeira-se-fps.sh --exe /path/to/title.exe
+```
+
+To launch a title directly, use `madeira-se-run` with the host, guest, QEMU,
+runtime, prefix and DXMT directories documented in
+[`madeira-se/README.md`](madeira-se/README.md). The executable's PE header
+selects i386 versus x86-64 automatically; no Wine desktop is needed unless
+`--desktop` is explicitly requested.
+
+`madeira-se-run` accepts `--d3d9-backend auto|dxmt|wined3d`. In `auto` mode it
+only enables the bundled d9mt-derived D3D9 Metal module for executables that
+reference D3D9 (including `d3dx9_*.dll`); D3D11-only programs retain DXMT's
+normal command stream. Use `--d3d9-backend dxmt` to force the path for a title
+that loads D3D9 dynamically, or `wined3d` for the compatibility fallback.
+
 ## License
 
 **GPL-3.0-or-later** — see [`LICENSE`](LICENSE). Derivatives that are

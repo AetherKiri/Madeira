@@ -23,13 +23,20 @@ enum StikJITHelper {
 
     /// Check if StikDebug or StikJIT is available by trying to open their URL.
     static var isAvailable: Bool {
+#if targetEnvironment(macCatalyst)
+        return jit_is_available()
+#else
         guard let url = URL(string: "stikjit://enable-jit") else { return false }
         return UIApplication.shared.canOpenURL(url)
+#endif
     }
 
     /// Open StikDebug with our JIT script embedded in the URL.
     /// StikDebug will attach to our process and run the script.
     static func enableJIT(completion: @escaping (Bool) -> Void) {
+#if targetEnvironment(macCatalyst)
+        completion(jit_is_available())
+#else
         let bundleId = Bundle.main.bundleIdentifier ?? "com.madeira.emulator"
 
         // Build the URL with script data
@@ -54,6 +61,7 @@ enum StikJITHelper {
             // Poll for CS_DEBUGGED flag
             pollForJIT(completion: completion)
         }
+#endif
     }
 
     /// Poll every 0.5s until CS_DEBUGGED is set, then call completion.
@@ -80,6 +88,26 @@ enum StikJITHelper {
     /// Allocate a JIT memory pool via BRK #0xf00d WITHOUT detaching the debugger.
     /// The debugger stays attached so Wine can use BRK to prepare PE code pages.
     static func allocatePool(poolSize: Int = 128 * 1024 * 1024) -> (rx: UnsafeMutableRawPointer, rw: UnsafeMutableRawPointer, size: Int)? {
+#if targetEnvironment(macCatalyst)
+        guard let rx = jit26_prepare_region(nil, poolSize) else { return nil }
+        var rw: vm_address_t = 0
+        var current: vm_prot_t = 0
+        var maximum: vm_prot_t = 0
+        let kr = vm_remap(mach_task_self_, &rw, vm_size_t(poolSize), 0,
+            VM_FLAGS_ANYWHERE, mach_task_self_, vm_address_t(bitPattern: rx), 0,
+            &current, &maximum, VM_INHERIT_NONE)
+        guard kr == KERN_SUCCESS,
+              vm_protect(mach_task_self_, rw, vm_size_t(poolSize), 0,
+                         VM_PROT_READ | VM_PROT_WRITE) == KERN_SUCCESS,
+              let writable = UnsafeMutableRawPointer(bitPattern: rw) else {
+            if rw != 0 { vm_deallocate(mach_task_self_, rw, vm_size_t(poolSize)) }
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: rx), vm_size_t(poolSize))
+            LogStore.shared.log("Mac JIT pool allocation failed", level: .error)
+            return nil
+        }
+        LogStore.shared.log("Mac JIT pool ready (\(poolSize / 1024 / 1024)MB)", level: .success)
+        return (rx: rx, rw: writable, size: poolSize)
+#else
         LogStore.shared.log("Allocating \(poolSize / 1024 / 1024)MB JIT pool via debugger...")
 
         // iOS-Madeira: FEX's dispatcher emit has a position-dependent encoding
@@ -301,6 +329,7 @@ enum StikJITHelper {
         LogStore.shared.log("JIT pool ready (debugger still attached).", level: .success)
 
         return (rx: rxPtr, rw: rwPtr, size: poolSize)
+#endif
     }
 
     /// Detach the debugger. Call this after Wine is done loading PE DLLs.

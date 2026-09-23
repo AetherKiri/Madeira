@@ -3,27 +3,19 @@ set -e
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
+source "$REPO_ROOT/build/native-platform.sh"
 WINE_SRC="$REPO_ROOT/wine"
-SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-APP_LIB="$REPO_ROOT/app/Madeira/libwineserver.a"
+APP_LIB="$NATIVE_LIB_DIR/libwineserver.a"
 SHIMS_DIR="$REPO_ROOT/build/ntdll-unix/shims"
 
 # Object files and library go in build dir
-OBJ_DIR="$BUILD_DIR/obj"
+OBJ_DIR="$BUILD_DIR/obj$NATIVE_SUFFIX"
 mkdir -p "$OBJ_DIR"
-
-# Copy the base library if we don't have one yet
-if [ ! -f "$OBJ_DIR/libwineserver.a" ]; then
-    if [ -f "$APP_LIB" ]; then
-        cp "$APP_LIB" "$OBJ_DIR/libwineserver.a"
-    else
-        echo "ERROR: No base libwineserver.a found"
-        exit 1
-    fi
-fi
+BUILD_MODE="${1:-all}"
+[ -f "$OBJ_DIR/libwineserver.a" ] || BUILD_MODE=all
 
 CC_FLAGS=(
-    -arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 -O2
+    "${NATIVE_FLAGS[@]}" -O2
     -I"$WINE_SRC/include" -I"$WINE_SRC/include/wine"
     -I"$WINE_SRC/build-macos/include"
     -I"$BUILD_DIR" -I"$WINE_SRC/server"
@@ -48,7 +40,7 @@ compile_one() {
     local src=$1
     local name=$2
     echo -n "  $name... "
-    if xcrun -sdk iphoneos clang "${CC_FLAGS[@]}" -c "$src" -o "$OBJ_DIR/$name.o" 2>"$OBJ_DIR/err-$name.txt"; then
+    if xcrun -sdk "$SDK_NAME" clang "${CC_FLAGS[@]}" -c "$src" -o "$OBJ_DIR/$name.o" 2>"$OBJ_DIR/err-$name.txt"; then
         echo "OK"
     else
         echo "FAILED (see $OBJ_DIR/err-$name.txt)"
@@ -94,18 +86,36 @@ PATCHED_FILES=(
     "sock:$WINE_SRC/server/sock.c:sock.o"
 )
 
+# Build the unmodified server objects as well, so a clean checkout does not
+# depend on an untracked archive from the author's machine.
+if [ "$BUILD_MODE" = all ]; then
+    BASE_OBJECTS=()
+    for src in "$WINE_SRC"/server/*.c; do
+        name=$(basename "$src" .c)
+        patched=0
+        for entry in "${PATCHED_FILES[@]}"; do
+            [ "${entry##*:}" != "$name.o" ] || patched=1
+        done
+        [ "$patched" -eq 0 ] || continue
+        compile_one "$src" "$name"
+        BASE_OBJECTS+=("$OBJ_DIR/$name.o")
+    done
+    rm -f "$OBJ_DIR/libwineserver.a"
+    ar rcs "$OBJ_DIR/libwineserver.a" "${BASE_OBJECTS[@]}"
+fi
+
 echo "=== Building kill wrapper (without kill macro) ==="
 echo -n "  wineserver_ios_kill... "
 # Compile WITHOUT -include wineserver_ios_kill.h to avoid recursive macro
-KILL_FLAGS=(-arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 -O2
+KILL_FLAGS=("${NATIVE_FLAGS[@]}" -O2
     -I"$BUILD_DIR" -DWINE_IOS=1 -Wno-implicit-function-declaration)
-if xcrun -sdk iphoneos clang "${KILL_FLAGS[@]}" -c "$BUILD_DIR/wineserver_ios_kill.c" -o "$OBJ_DIR/wineserver_ios_kill.o" 2>"$OBJ_DIR/err-kill.txt"; then
+if xcrun -sdk "$SDK_NAME" clang "${KILL_FLAGS[@]}" -c "$BUILD_DIR/wineserver_ios_kill.c" -o "$OBJ_DIR/wineserver_ios_kill.o" 2>"$OBJ_DIR/err-kill.txt"; then
     echo "OK"
 else
     echo "FAILED"; cat "$OBJ_DIR/err-kill.txt"; exit 1
 fi
 
-case "${1:-all}" in
+case "$BUILD_MODE" in
     all)
         echo "=== Building all patched wineserver files ==="
         for entry in "${PATCHED_FILES[@]}"; do
@@ -177,12 +187,19 @@ echo "=== Renaming colliding symbols in every .o (objcopy sweep) ==="
 # we know collide with win32u-unix, repackage. Affects definitions AND
 # references uniformly, so cross-file calls inside wineserver still
 # resolve. Externals (win32u, etc.) only see the ws_-prefixed names.
-OBJCOPY=$(command -v llvm-objcopy || echo /opt/homebrew/opt/llvm/bin/llvm-objcopy)
-[ -x "$OBJCOPY" ] || OBJCOPY=/opt/homebrew/Cellar/llvm/22.1.0/bin/llvm-objcopy
+OBJCOPY=${OBJCOPY:-$(command -v llvm-objcopy || true)}
+if [ ! -x "$OBJCOPY" ]; then
+    OBJCOPY="$REPO_ROOT/toolchains/llvm-mingw-20260421-ucrt-macos-universal/bin/llvm-objcopy"
+fi
+[ -x "$OBJCOPY" ] || { echo "llvm-objcopy is required" >&2; exit 1; }
 COLLISIONS=(
     alloc_user_handle free_user_handle get_virtual_screen_rect
     destroy_thread_windows get_window_thread is_desktop_class
     is_message_class is_window_visible mirror_region send_notify_message
+    # The ntdll unix client keeps same-named protocol state in-process. Keep
+    # the server's copy private so the two sides do not become one COMMON
+    # symbol when the archives are linked into Madeira.app.
+    supported_machines_count native_machine server_start_time
     # shared_session: BOTH wineserver and win32u-unix declare it as a
     # common global. Single-process iOS link merges them — last writer
     # wins. win32u's shared_session_init() overwrites with the client-side

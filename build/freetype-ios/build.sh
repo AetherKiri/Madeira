@@ -10,20 +10,18 @@ set -e
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
+source "$REPO_ROOT/build/native-platform.sh"
 SRC="$REPO_ROOT/research/freetype"
 
 [ -d "$SRC" ] || { echo "ERROR: clone freetype first (see header)"; exit 1; }
 
-cmake -S "$SRC" -B "$BUILD_DIR/build" -G "Unix Makefiles" \
-  -DCMAKE_SYSTEM_NAME=iOS \
-  -DCMAKE_OSX_ARCHITECTURES=arm64 \
-  -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0 \
-  -DCMAKE_OSX_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)" \
+cmake -S "$SRC" -B "$BUILD_DIR/build$NATIVE_SUFFIX" -G "Unix Makefiles" \
+  "${NATIVE_CMAKE_FLAGS[@]}" \
   -DCMAKE_BUILD_TYPE=Release \
   -DBUILD_SHARED_LIBS=OFF \
   -DFT_DISABLE_ZLIB=ON -DFT_DISABLE_BZIP2=ON -DFT_DISABLE_PNG=ON \
   -DFT_DISABLE_HARFBUZZ=ON -DFT_DISABLE_BROTLI=ON \
   -DCMAKE_C_FLAGS="-fno-stack-protector"
 
-cmake --build "$BUILD_DIR/build" -j8
-echo "Done: $BUILD_DIR/build/libfreetype.a"
+cmake --build "$BUILD_DIR/build$NATIVE_SUFFIX" -j6
+echo "Done: $BUILD_DIR/build$NATIVE_SUFFIX/libfreetype.a"

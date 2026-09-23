@@ -21,7 +21,7 @@ static int fails;
 #define CHECK(c, ...) do { if (!(c)) { printf("  FAIL: "); printf(__VA_ARGS__); \
     printf("\n"); fails++; } else { printf("  ok: "); printf(__VA_ARGS__); printf("\n"); } } while (0)
 
-int main(void) {
+int main(int argc, char **argv) {
     if (!wmtr_enabled()) {
         printf("client reports LOCAL mode -- set DXMT_REMOTE_METAL and RMETAL_TOKEN\n");
         return 2;
@@ -76,8 +76,12 @@ int main(void) {
     /* Shader path: a REAL metallib crosses as bytes, becomes a host dispatch_data,
      * then a library, then named functions. This is the path DXMT takes; a
      * synthetic blob would not prove the host can actually build a library. */
-    FILE *mf = fopen("/private/tmp/claude-501/-Users-willfaust-Documents-ios-pc-game-claude/3356ff92-c226-4913-8afb-99c1e8e39f4d/scratchpad/cube_shader.metallib", "rb");
-    if (!mf) { printf("  SKIP: no metallib at /private/tmp/claude-501/-Users-willfaust-Documents-ios-pc-game-claude/3356ff92-c226-4913-8afb-99c1e8e39f4d/scratchpad/cube_shader.metallib\n"); }
+    const char *metallib = argc > 1 ? argv[1] : "/tmp/draw.metallib";
+    FILE *mf = fopen(metallib, "rb");
+    if (!mf) {
+        printf("  %s: no metallib at %s\n", argc > 1 ? "FAIL" : "SKIP", metallib);
+        if (argc > 1) return 1;
+    }
     else {
         fseek(mf, 0, SEEK_END); long mlen = ftell(mf); fseek(mf, 0, SEEK_SET);
         uint8_t *mb = malloc((size_t)mlen);

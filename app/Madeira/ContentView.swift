@@ -848,7 +848,7 @@ struct ContentView: View {
     @StateObject private var logStore = LogStore.shared
     @State private var jitStatus: JITStatus = .unknown
     @State private var entitlements: EntitlementStatus?
-    @State private var debuggerAttached = isDebuggerAttached()
+    @State private var jitAvailable = jit_is_available()
     @ObservedObject private var input = InputSettings.shared
     @State private var pointerPanel = false
     @Namespace private var pointerNS
@@ -1080,7 +1080,7 @@ struct ContentView: View {
         HStack(spacing: 8) {
             // Live debugger/JIT state, not the (macOS-only, never granted on
             // iOS) allow-jit entitlement the old badge checked.
-            entitlementBadge("JIT", granted: debuggerAttached)
+            entitlementBadge("JIT", granted: jitAvailable)
             entitlementBadge("Memory+", granted: ents.increasedMemory)
             entitlementBadge("64-bit VA", granted: ents.extendedVA)
             Spacer()
@@ -1099,7 +1099,7 @@ struct ContentView: View {
         .padding(.top, 4)
         .padding(.bottom, 8)
         .onReceive(Timer.publish(every: 2, on: .main, in: .common).autoconnect()) { _ in
-            debuggerAttached = isDebuggerAttached()
+            jitAvailable = jit_is_available()
         }
     }
 
@@ -1720,15 +1720,15 @@ struct ContentView: View {
 
     private func enableJITViaStikDebug() {
         jitStatus = .testing
-        logStore.log("Requesting JIT via StikDebug URL scheme...")
+        logStore.log("Enabling JIT...")
 
         StikJITHelper.enableJIT { success in
             if success {
                 jitStatus = .available
-                logStore.log("JIT enabled! Debugger attached.", level: .success)
+                logStore.log("JIT enabled.", level: .success)
             } else {
                 jitStatus = .unavailable
-                logStore.log("Failed to enable JIT via StikDebug", level: .error)
+                logStore.log("Failed to enable JIT", level: .error)
             }
         }
     }
@@ -1737,7 +1737,7 @@ struct ContentView: View {
     /// Debugger stays attached during PE loading so mprotect_exec can use BRK
     /// to prepare code pages. Detach happens after Wine finishes + recovery.
     private func runWineFullSequence() {
-        guard jit_check_debugged() else {
+        guard jit_is_available() else {
             logStore.log("JIT not enabled. Press 'Enable JIT' first.", level: .error)
             return
         }

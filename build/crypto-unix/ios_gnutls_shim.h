@@ -19,6 +19,18 @@
  * of these files loads something else too. */
 #pragma once
 
+/* The Wine host configure runs without a system GnuTLS installation on the
+ * build machine, so its generated config.h leaves these feature macros off.
+ * Madeira links the matching static GnuTLS build below; expose the feature
+ * blocks that are required by bcrypt and schannel and give dlopen() the name
+ * used by the static symbol shim. */
+#ifndef HAVE_GNUTLS_CIPHER_INIT
+#define HAVE_GNUTLS_CIPHER_INIT 1
+#endif
+#ifndef SONAME_LIBGNUTLS
+#define SONAME_LIBGNUTLS "libgnutls.so.30"
+#endif
+
 extern void *ios_gnutls_dlopen(const char *name, int flags);
 extern void *ios_gnutls_dlsym(void *handle, const char *name);
 extern int   ios_gnutls_dlclose(void *handle);

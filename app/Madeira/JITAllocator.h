@@ -49,6 +49,10 @@ void jit_region_invalidate(JITRegion *region, size_t offset, size_t size);
 // Returns true if the debugger has attached and set the flag.
 bool jit_check_debugged(void);
 
+// Whether this process can allocate executable memory. On Mac Catalyst this
+// uses the app's local code-signing entitlements; iOS still requires a debugger.
+bool jit_is_available(void);
+
 // Install SIGTRAP handler so BRK instructions don't crash the app
 // when no debugger is attached. Must be called before any jit26_* functions.
 void jit_install_trap_handler(void);

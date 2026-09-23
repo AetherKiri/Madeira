@@ -3,11 +3,11 @@ set -e
 
 BUILD_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$BUILD_DIR/../.." && pwd)"
+source "$REPO_ROOT/build/native-platform.sh"
 WINE_SRC="$REPO_ROOT/wine"
 WINE_BUILD="$WINE_SRC/build-macos"
-SDK=$(xcrun --sdk iphoneos --show-sdk-path)
-OBJ_DIR="$BUILD_DIR/obj"
-APP_LIB="$REPO_ROOT/app/Madeira/libntdll_unix.a"
+OBJ_DIR="$BUILD_DIR/obj$NATIVE_SUFFIX"
+APP_LIB="$NATIVE_LIB_DIR/libntdll_unix.a"
 
 mkdir -p "$OBJ_DIR"
 
@@ -15,8 +15,7 @@ compile_one() {
     local src=$1
     local out=$2
     echo -n "  $out... "
-    if xcrun -sdk iphoneos clang \
-        -arch arm64 -isysroot "$SDK" -miphoneos-version-min=17.0 \
+    if xcrun -sdk "$SDK_NAME" clang "${NATIVE_FLAGS[@]}" \
         -O2 -fPIC -fvisibility=hidden -fno-stack-protector -fno-strict-aliasing \
         -Wno-implicit-function-declaration -Wno-int-conversion \
         -include "$WINE_BUILD/include/config.h" \
