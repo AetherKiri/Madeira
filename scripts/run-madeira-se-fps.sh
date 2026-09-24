@@ -169,14 +169,32 @@ sample_metrics()
     printf '%s,%s,%s\n' "$now" "${cpu:-0.0}" "${rss:-0}" >>"$metrics_csv"
 }
 
+sample_at=$((SECONDS + warmup))
 deadline=$((SECONDS + duration))
+sampled=0
 while kill -0 "$runner_pid" 2>/dev/null && [[ "$SECONDS" -lt "$deadline" ]]; do
     sample_metrics
+    if [[ "$sampled" -eq 0 ]] && command -v sample >/dev/null 2>&1; then
+        first_present_s="$(sed -nE 's/.*Present #1 t=([0-9]+\.[0-9]+).*/\1/p' "$run_log" | head -n 1)"
+        if [[ -n "$first_present_s" ]]; then
+            now_s="$(python3 -c 'import time; print(f"{time.monotonic():.3f}")')"
+            if awk -v now="$now_s" -v first="$first_present_s" \
+                    -v skip="$warmup" 'BEGIN { exit !(now >= first + skip) }'; then
+                sample "$runner_pid" 1 1 -file "$sample_log" >/dev/null 2>&1 || :
+                sampled=1
+            fi
+        elif [[ "$SECONDS" -ge "$sample_at" ]] &&
+                grep -q '@ approx [0-9.]*fps' "$run_log"; then
+            sample "$runner_pid" 1 1 -file "$sample_log" >/dev/null 2>&1 || :
+            sampled=1
+        fi
+    fi
     sleep 1
 done
 sample_metrics
 
-if kill -0 "$runner_pid" 2>/dev/null && command -v sample >/dev/null 2>&1; then
+if [[ "$sampled" -eq 0 ]] && kill -0 "$runner_pid" 2>/dev/null &&
+        command -v sample >/dev/null 2>&1; then
     sample "$runner_pid" 1 1 -file "$sample_log" >/dev/null 2>&1 || :
 fi
 if kill -0 "$runner_pid" 2>/dev/null; then kill -TERM "$runner_pid" 2>/dev/null || :; sleep 1; fi
