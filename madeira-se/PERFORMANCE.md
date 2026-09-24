@@ -66,6 +66,14 @@ average process CPU, within the run-to-run noise of the earlier 3 FPS samples.
 It is retained for coverage and a low-risk hot path, but it is not claimed as
 a material FPS improvement.
 
+An isolated Apple M4 scheduling build (`-mtune=apple-m4`) was compared using
+the same A7-3 overlay and runtime settings. It measured 2.93 Present FPS at
+89.89% average CPU versus 2.95 FPS at 90.27% for the default build, so the
+compiler hint does not improve this TCTI-bound workload and is not used by the
+shipping build. A global uninitialized-variable switch was also rejected after
+it made the Wine server unstable; only the explicitly scoped TCTI temporary
+frame optimization remains enabled.
+
 With `MADEIRA_SE_PERF_STATS=1`, one active A7 title window counted about
 1.59 billion guest instructions and 174.8 million TCTI TB entries, while only
 245 thousand TBs needed translation. The translated TBs covered about 1.38
