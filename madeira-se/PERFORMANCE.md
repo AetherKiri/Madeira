@@ -144,6 +144,16 @@ measured 4.72 FPS at 83.20% CPU versus 4.74 FPS at 82.28% for the paired
 stable build. The extra four-register gadget tables and stream rewrite are
 rejected.
 
+The per-TB icount prologue was then fused into one precompiled `tb_icount`
+gadget. It keeps the generic signed budget and asynchronous-exit semantics: an
+insufficient budget returns the current TB without writing the low counter,
+while an executable TB stores the decremented value before entering its body.
+The i386 and x86-64 smoke probes, all Wine/DXMT regression programs, and the
+A7-3 overlay passed after the change. The corrected A7 measurement increased
+from 4.74 to 4.83 Present FPS while average CPU fell from 82.28% to 80.39%
+(about 1.9%); this is retained as a small dispatch reduction, and it does not
+close the roughly order-of-magnitude gap to the 30-FPS goal.
+
 The retained dispatch-size optimization emits the precompiled gadgets as
 file-scope private assembly instead of naked C functions. Clang's naked
 function wrapper had appended an unreachable `brk #1` after every gadget;

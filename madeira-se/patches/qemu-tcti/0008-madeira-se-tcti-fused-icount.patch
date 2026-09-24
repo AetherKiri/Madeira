@@ -1,0 +1,193 @@
+diff --git a/accel/tcg/translator.c b/accel/tcg/translator.c
+index ef1538b..7a8794e 100644
+--- a/accel/tcg/translator.c
++++ b/accel/tcg/translator.c
+@@ -21,6 +21,10 @@
+ #include "disas/disas.h"
+ #include "tb-internal.h"
+ 
++#if defined(CONFIG_TCG_THREADED_INTERPRETER) && defined(TARGET_I386)
++#define MADEIRA_SE_TCTI_FAST_ICOUNT 1
++#endif
++
+ static void set_can_do_io(DisasContextBase *db, bool val)
+ {
+     QEMU_BUILD_BUG_ON(sizeof_field(CPUState, neg.can_do_io) != 1);
+@@ -46,6 +50,20 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
+     TCGv_i32 count = NULL;
+     TCGOp *icount_start_insn = NULL;
+ 
++#if defined(MADEIRA_SE_TCTI_FAST_ICOUNT)
++    /* The TCTI backend emits one fused icount preamble per TB. It performs
++     * the same signed budget check and only stores the low counter when the
++     * TB is going to execute, so the generic TCG ops are redundant. */
++    if (cflags & CF_USE_ICOUNT) {
++        tcg_ctx->tcti_tb_fused_icount = true;
++        tcg_ctx->tcti_tb_icount_offset =
++            offsetof(ArchCPU, parent_obj.neg.icount_decr.u32)
++            - offsetof(ArchCPU, env);
++        tcg_ctx->exitreq_label = NULL;
++        return NULL;
++    }
++#endif
++
+     if ((cflags & CF_USE_ICOUNT) || !(cflags & CF_NOIRQ)) {
+         count = tcg_temp_new_i32();
+         tcg_gen_ld_i32(count, tcg_env,
+@@ -89,7 +107,7 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
+ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
+                        TCGOp *icount_start_insn, int num_insns)
+ {
+-    if (cflags & CF_USE_ICOUNT) {
++    if (icount_start_insn != NULL) {
+         /*
+          * Update the num_insn immediate parameter now that we know
+          * the actual insn count.
+diff --git a/include/tcg/tcg.h b/include/tcg/tcg.h
+index 6bfd0eb..7390141 100644
+--- a/include/tcg/tcg.h
++++ b/include/tcg/tcg.h
+@@ -372,6 +372,12 @@ struct TCGContext {
+     tcg_insn_unit *code_buf;      /* pointer for start of tb */
+     tcg_insn_unit *code_ptr;      /* pointer for running end of tb */
+ 
++    /* Madeira-SE TCTI fused icount preamble patch state. */
++    bool tcti_tb_fused_icount;
++    intptr_t tcti_tb_icount_offset;
++    tcg_insn_unit *tcti_tb_next_slot;
++    tcg_insn_unit *tcti_tb_body;
++
+ #ifdef CONFIG_DEBUG_TCG
+     int goto_tb_issue_mask;
+     const TCGOpcode *vecop_list;
+diff --git a/tcg/tcg.c b/tcg/tcg.c
+index fc933b1..aad44a1 100644
+--- a/tcg/tcg.c
++++ b/tcg/tcg.c
+@@ -1680,6 +1680,10 @@ void tcg_func_start(TCGContext *s)
+     s->nb_ops = 0;
+     s->nb_labels = 0;
+     s->current_frame_offset = s->frame_start;
++    s->tcti_tb_fused_icount = false;
++    s->tcti_tb_icount_offset = 0;
++    s->tcti_tb_next_slot = NULL;
++    s->tcti_tb_body = NULL;
+ 
+ #ifdef CONFIG_DEBUG_TCG
+     s->goto_tb_issue_mask = 0;
+@@ -6504,6 +6508,15 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
+         return -2;
+     }
+ 
++    /* The fused icount gadget is emitted before the body, so patch its
++     * forward body pointer only after all register allocation and labels have
++     * settled. The slot is in the writable TCTI stream. */
++    if (s->tcti_tb_next_slot != NULL) {
++        *(uint64_t *)s->tcti_tb_next_slot =
++            (uint64_t)(uintptr_t)s->tcti_tb_body;
++        s->tcti_tb_next_slot = NULL;
++    }
++
+ #if !defined(CONFIG_TCG_INTERPRETER) && !defined(CONFIG_TCG_THREADED_INTERPRETER)
+     /* flush instruction cache */
+     flush_idcache_range((uintptr_t)tcg_splitwx_to_rx(s->code_buf),
+diff --git a/tcg/aarch64-tcti/tcg-target.c.inc b/tcg/aarch64-tcti/tcg-target.c.inc
+index 42acbc8..5f68f5c 100644
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -2277,6 +2277,26 @@ static void madeira_se_tcti_perf_note_opcode_pairs(TCGContext *s)
+ 
+ static void tcg_out_tb_start(TCGContext *s)
+ {
++    s->tcti_tb_next_slot = NULL;
++    s->tcti_tb_body = NULL;
++
++    /*
++     * Madeira-SE TCTI uses a fused icount preamble for i386 TBs. The
++     * translator skips the generic icount TCG ops under the same build
++     * condition; this stream preserves the early-exit semantics while
++     * removing several interpreter dispatches from every TB.
++     */
++    if (s->tcti_tb_fused_icount) {
++        tcg_out_gadget(s, gadget_tb_icount);
++        tcg_out64(s, (uint64_t)s->tcti_tb_icount_offset);
++        tcg_out64(s, s->gen_tb->icount);
++        tcg_out64(s, (uint64_t)(uintptr_t)
++                  tcg_splitwx_to_rx((void *)s->gen_tb)
++                  + TB_EXIT_REQUESTED);
++        s->tcti_tb_next_slot = s->code_ptr;
++        tcg_out64(s, 0);
++    }
++
+     /*
+      * Madeira-SE throughput profiling.
+      *
+@@ -2286,6 +2306,7 @@ static void tcg_out_tb_start(TCGContext *s)
+      * it is emitted only when the environment asked for instrumentation.
+      */
+     if (!madeira_se_tcti_perf_enabled()) {
++        s->tcti_tb_body = (tcg_insn_unit *)tcg_splitwx_to_rx(s->code_ptr);
+         return;
+     }
+ 
+@@ -2294,6 +2315,8 @@ static void tcg_out_tb_start(TCGContext *s)
+     tcg_out_gadget(s, gadget_tb_enter);
+     tcg_out64(s, (uint64_t)(uintptr_t)&madeira_se_tcti_perf_state);
+     tcg_out64(s, s->gen_tb->icount);
++
++    s->tcti_tb_body = (tcg_insn_unit *)tcg_splitwx_to_rx(s->code_ptr);
+ }
+ 
+ bool tcg_target_has_memory_bswap(MemOp memop)
+diff --git a/tcg/aarch64-tcti/tcti-gadget-gen.py b/tcg/aarch64-tcti/tcti-gadget-gen.py
+index da0c14e..cb17055 100755
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -82,7 +82,7 @@ def START_COLLECTION(name):
+     current_collection = name
+     
+ 
+-def simple(name, *lines, export=True):
++def simple(name, *lines, export=True, epilogue=True):
+     """ Generates a simple gadget that needs no per-register specialization. """
+ 
+     global gadgets, instructions
+@@ -106,7 +106,7 @@ def simple(name, *lines, export=True):
+     print("\t\".p2align 2\\n\"", file=c_file)
+     print(f"\t\".private_extern _gadget_{name}\\n\"", file=c_file)
+     print(f"\t\"_gadget_{name}:\\n\"", file=c_file)
+-    for line in lines + EPILOGUE:
++    for line in lines + (EPILOGUE if epilogue else ()):
+         print(f"\t\"{line} \\n\"", file=c_file)
+         instructions += 1
+     print(");\n", file=c_file)
+@@ -756,6 +756,29 @@ def vector_math_dn_immediate(name, operation, immediate_range, filter=lambda x:
+     "str x27, [x24, #8]"
+ )
+ 
++# Instruction-count preamble. This replaces the generic TCG load/subtract/branch/store
++# sequence for Madeira-SE TCTI TBs. The stream contains, after this gadget, the
++# negative env offset, the guest instruction count, the TB_EXIT_REQUESTED value,
++# and a pointer to the first body gadget. When the budget is insufficient we
++# return before the body and leave the low counter unchanged, matching QEMU's
++# generic icount path.
++simple("tb_icount",
++    "ldr x24, [x28], #8",
++    "add x24, x14, x24",
++    "ldr w26, [x24]",
++    "ldr w27, [x28], #8",
++    "subs w26, w26, w27",
++    "b.lt 0f",
++    "strh w26, [x24]",
++    "ldr x28, [x28, #8]",
++    "ldr x27, [x28], #8",
++    "br x27",
++    "0:",
++    "ldr x0, [x28], #8",
++    "ret",
++    epilogue=False
++)
++
+ 
+ 
+ 
