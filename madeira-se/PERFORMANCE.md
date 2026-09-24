@@ -83,6 +83,11 @@ passed both architecture probes, but its A7 run measured 2.72 FPS versus 2.89
 FPS for the default entry path. Neither experiment changes the shipping
 runtime.
 
+Capturing the TB return value directly in an output register removed the visible
+return-value store/load pair in the entry assembly and passed both shared-library
+probes. The matching A7 sample measured 2.61 FPS, below the 2.89 FPS default
+sample, so the existing stack-backed return path is retained.
+
 With `MADEIRA_SE_PERF_STATS=1`, one active A7 title window counted about
 1.59 billion guest instructions and 174.8 million TCTI TB entries, while only
 245 thousand TBs needed translation. The translated TBs covered about 1.38
