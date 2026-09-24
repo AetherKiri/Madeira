@@ -100,6 +100,13 @@ filtering those notifications reduced the title's draw count and lowered the
 measured Present rate. The shipping path therefore keeps the conservative
 invalidation behavior for compatibility.
 
+A prototype that fused the common `mb_ld` followed by `qemu_ld_i32` pair was
+also rejected. The generator and shared-library probes passed after a clean
+rebuild, but the 60-second A7-3 run still triggered a wineserver crash and
+measured 2.92 Present FPS at 89.43% average CPU. Since it provided no
+repeatable speedup and failed the stability gate, the fusion code is not part
+of the runtime.
+
 The next performance work should target TCTI dispatch and translation-cache
 reuse with per-title regression coverage. Reaching 30 FPS for this workload
 requires roughly an order of magnitude more CPU throughput; changing the
