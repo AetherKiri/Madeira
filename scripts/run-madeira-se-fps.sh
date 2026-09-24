@@ -207,17 +207,29 @@ if [[ -s "$fps_log" ]]; then
     summary_exit=$?
 else
     awk -v warmup="$warmup" '
-        NR == 1 { first_t=$2+0 }
-        { if (($2+0)-first_t < warmup) next; n=$1+0; t=$2+0; count++; last_n=n; last_t=t;
-          if (count == 1) { first_n=n; measured_first_t=t } }
+        BEGIN { count=0 }
+        NR == 1 { boot_t=$2+0; have_previous=0 }
+        {
+          n=$1+0; t=$2+0;
+          if (!have_start && (t-boot_t) >= warmup) {
+            if (have_previous) { first_n=previous_n; first_t=previous_t; count=1 }
+            else { first_n=n; first_t=t; count=0 }
+            have_start=1;
+          }
+          previous_n=n; previous_t=t; have_previous=1;
+          if (have_start) { count++; last_n=n; last_t=t }
+        }
         END {
-          if (count < 2 || last_t <= measured_first_t) {
+          if (!have_start || count < 2 || last_t <= first_t) {
             print "FPS_SOURCE=DXMT_PRESENT"; print "FPS_STATUS=INSUFFICIENT_PRESENT"; print "FPS_SAMPLES=" count; exit 2
           }
-          average=(last_n-first_n)/(last_t-measured_first_t);
-          printf "FPS_SOURCE=DXMT_PRESENT\nFPS_STATUS=%s\n", (average >= 30 ? "PASS_30FPS" : "BELOW_30FPS");
+          average=(last_n-first_n)/(last_t-first_t);
+          sustained=(count >= 3 && (last_t-first_t) >= 1.0);
+          status=(sustained && average >= 30 ? "PASS_30FPS" : (sustained ? "BELOW_30FPS" : "INSUFFICIENT_PRESENT"));
+          printf "FPS_SOURCE=DXMT_PRESENT\nFPS_STATUS=%s\n", status;
           printf "FPS_SAMPLES=%d\nFPS_AVG=%.2f\nFPS_MIN=NA\nFPS_MAX=NA\nFPS_TOTAL=%d\n", count, average, last_n;
-          printf "FPS_STABLE_30=UNAVAILABLE\n"
+          printf "FPS_STABLE_30=%s\n", (sustained && average >= 30 ? "PASS" : "UNAVAILABLE");
+          if (!sustained) exit 2
         }
     ' "$present_log" >"$summary_log"
     summary_exit=$?
@@ -227,14 +239,24 @@ printf 'FPS_ARCHITECTURE=%s\nFPS_BUDGET=%s\nFPS_CSMT=%s\nFPS_VSYNC=%s\nFPS_D3D9_
     "$architecture" "$budget" "$csmt" "$vsync" "$d3d9_backend" >>"$summary_log"
 printf 'FPS_CAP=%s\nMETRICS_CSV=%s\n' "$fps_cap" "$metrics_csv" >>"$summary_log"
 printf 'FPS_CONTEXT_REUSE_SLICES=%s\n' "$reuse_slices" >>"$summary_log"
-awk '
-    NR == 1 { first_n=$1; first_t=$2; next }
-    { last_n=$1; last_t=$2; lines++ }
+awk -v warmup="$warmup" '
+    BEGIN { lines=0 }
+    NR == 1 { boot_t=$2+0; have_previous=0 }
+    {
+      n=$1+0; t=$2+0;
+      if (!have_start && (t-boot_t) >= warmup) {
+        if (have_previous) { first_n=previous_n; first_t=previous_t; lines=1 }
+        else { first_n=n; first_t=t; lines=0 }
+        have_start=1;
+      }
+      previous_n=n; previous_t=t; have_previous=1;
+      if (have_start) { last_n=n; last_t=t; lines++ }
+    }
     END {
-      if (!lines) { print "PRESENT_STATUS=INSUFFICIENT"; print "PRESENT_SAMPLES=0"; exit }
+      if (!have_start || lines < 2) { print "PRESENT_STATUS=INSUFFICIENT"; print "PRESENT_SAMPLES=" lines; exit }
       dt=last_t-first_t;
-      if (dt > 0) printf "PRESENT_STATUS=MEASURED\nPRESENT_SAMPLES=%d\nPRESENT_FIRST=%d\nPRESENT_LAST=%d\nPRESENT_AVG_FPS=%.2f\n", lines+1, first_n, last_n, (last_n-first_n)/dt;
-      else printf "PRESENT_STATUS=INSUFFICIENT\nPRESENT_SAMPLES=%d\n", lines+1;
+      if (dt > 0) printf "PRESENT_STATUS=MEASURED\nPRESENT_SAMPLES=%d\nPRESENT_FIRST=%d\nPRESENT_LAST=%d\nPRESENT_WINDOW_SECONDS=%.3f\nPRESENT_AVG_FPS=%.2f\n", lines, first_n, last_n, dt, (last_n-first_n)/dt;
+      else printf "PRESENT_STATUS=INSUFFICIENT\nPRESENT_SAMPLES=%d\n", lines;
     }
 ' "$present_log" >>"$summary_log"
 

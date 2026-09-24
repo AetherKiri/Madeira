@@ -286,6 +286,17 @@ index 0000000..d7bcf30
 +int madeira_se_qemu_tcti_smoke(void);
 +const madeira_se_cpu_backend_t *madeira_se_qemu_tcti_backend(void);
 +
++static bool madeira_se_env_enabled(const char *name)
++{
++    const char *value = getenv(name);
++
++    return value != NULL && value[0] != '\0'
++        && strcmp(value, "0") != 0
++        && strcasecmp(value, "off") != 0
++        && strcasecmp(value, "no") != 0
++        && strcasecmp(value, "false") != 0;
++}
++
 +static bool madeira_se_architecture_supported(madeira_se_architecture_t architecture)
 +{
 +#ifdef TARGET_X86_64
@@ -817,7 +828,7 @@ index 0000000..d7bcf30
 +        g_free(instance);
 +        return -1;
 +    }
-+    instance->stats_enabled = getenv("MADEIRA_SE_CPU_STATS") != NULL;
++    instance->stats_enabled = madeira_se_env_enabled("MADEIRA_SE_CPU_STATS");
 +
 +    bql_lock();
 +    madeira_se_instance_count++;

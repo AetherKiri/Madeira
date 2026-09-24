@@ -127,6 +127,23 @@ Resident TCTI context reuse was tested with four consecutive slices. A7-3
 fast-failed in its D3D9 startup before the first Present, so the existing
 default of zero reuse remains required for compatibility.
 
+The FPS runner's DXMT parser was corrected after comparing the raw log with
+the native Present counter. DXMT deliberately prints one checkpoint per 16
+Presents; treating each checkpoint as one frame after warmup could turn a
+short final burst into a false 60-FPS result. The parser now uses the Present
+sequence number, carries the checkpoint immediately before warmup into the
+measurement window, and requires three checkpoints over at least one second.
+On the same A7-3 overlay the corrected result is 4.74 FPS at 82.28% CPU with
+CPU statistics disabled and 4.74 FPS at 80.36% CPU with them enabled. The
+diagnostic counter path is therefore not the throughput bottleneck.
+
+An isolated superinstruction for the common `mov_i32/mov_i64` followed by
+`add_i32/add_i64` sequence fused only real register moves that the allocator
+could not coalesce. Both architecture probes passed, but the A7-3 run
+measured 4.72 FPS at 83.20% CPU versus 4.74 FPS at 82.28% for the paired
+stable build. The extra four-register gadget tables and stream rewrite are
+rejected.
+
 The retained dispatch-size optimization emits the precompiled gadgets as
 file-scope private assembly instead of naked C functions. Clang's naked
 function wrapper had appended an unreachable `brk #1` after every gadget;
