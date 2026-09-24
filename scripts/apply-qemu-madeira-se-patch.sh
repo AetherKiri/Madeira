@@ -78,6 +78,12 @@ for patch_file in "${patches[@]}"; do
             && grep -q '(0x5e03, "ub"' \
                 "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
         echo "Madeira-SE TCTI byte-store fastpath patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0007-madeira-se-tcti-gadget-text.patch" ]] \
+            && grep -q "file-scope" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py" \
+            && grep -q "private_extern _gadget_" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
+        echo "Madeira-SE TCTI gadget text patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

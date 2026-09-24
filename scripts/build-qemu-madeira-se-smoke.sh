@@ -102,6 +102,14 @@ if ! grep -R -q 'gadget_qemu_st_ub_unaligned_mode5e03_off32_i32' \
     echo "error: byte-store MemOp fastpath gadgets were not generated" >&2
     exit 1
 fi
+if ! grep -R -q 'private_extern _gadget_' "$BUILD_DIR/tcg"; then
+    echo "error: TCTI gadgets were not emitted as private file-scope assembly" >&2
+    exit 1
+fi
+if grep -R -q '__attribute__((naked))' "$BUILD_DIR/tcg"/tcti_*_gadgets.c; then
+    echo "error: generated TCTI gadgets still use trap-appending naked C wrappers" >&2
+    exit 1
+fi
 
 PROBE_SOURCE="$REPO_ROOT/madeira-se/tools/qemu_shared_probe.c"
 PROBE_BINARY="$BUILD_DIR/madeira-se-qemu-shared-probe"

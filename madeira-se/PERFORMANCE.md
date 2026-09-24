@@ -114,8 +114,35 @@ Present results were 3.05 FPS and 2.65 FPS, versus 2.80 FPS for the paired
 default run. The spread is run-to-run noise, so the extra 16⁴ gadget tables
 and stream rewrite are rejected as well.
 
-The next performance work should target TCTI dispatch and translation-cache
-reuse with per-title regression coverage. Reaching 30 FPS for this workload
-requires roughly an order of magnitude more CPU throughput; changing the
-Metal presentation path alone cannot provide that gain. All proposed changes
-must keep the no-runtime-code-generation policy required by the App Store.
+The TCTI entry's 1 KiB temporary area was moved to a per-CPU heap buffer in an
+isolated build. This reduced the entry stack frame from 0x430 to 0x80 bytes,
+but the paired 60-second A7-3 runs measured 3.05/3.05 Present FPS for the
+experiment versus 3.12 FPS for the default. The stack-frame change is
+therefore rejected. Increasing the instruction budget from 8M to 16M or 32M
+also stayed within normal noise (3.21 and 3.14 FPS) and is not the default;
+the title exits mostly through Wine calls and exceptions rather than the
+budget boundary.
+
+Resident TCTI context reuse was tested with four consecutive slices. A7-3
+fast-failed in its D3D9 startup before the first Present, so the existing
+default of zero reuse remains required for compatibility.
+
+The retained dispatch-size optimization emits the precompiled gadgets as
+file-scope private assembly instead of naked C functions. Clang's naked
+function wrapper had appended an unreachable `brk #1` after every gadget;
+removing those roughly two million instructions reduced the i386 TCTI
+`__TEXT` segment from about 58 MiB to 50 MiB and the dylib from 192 MiB to
+184 MiB. Two A7-3 samples (3.00 and 3.18 FPS) did not show a repeatable FPS
+gain over their 3.06-FPS paired default, but the smaller text image reduces
+App Store bundle size and instruction-cache pressure without changing the
+TCTI stream or guest semantics. Both x86 targets and the standalone probes
+pass with this generator change. The rebuilt main runtime entered the A7-3
+title and measured 3.38 Present FPS at 88.35% average CPU in a 60-second
+smoke; this is a compatibility check, not a claim of a 30-FPS result.
+
+The remaining performance work should target TCTI dispatch and translation
+cache reuse with per-title regression coverage. Reaching 30 FPS for this
+workload requires roughly an order of magnitude more CPU throughput; changing
+the Metal presentation path alone cannot provide that gain. All proposed
+changes must keep the no-runtime-code-generation policy required by the App
+Store.

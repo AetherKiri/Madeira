@@ -215,8 +215,10 @@ the ordered patches in `patches/qemu-tcti/`: the first embeds the x86/TCTI
 adapter, the second adds no-JIT throughput counters plus TCTI hot-path
 optimizations, the third enables the current soft-MMU TLB gadget offsets, the
 fourth adds opt-in opcode-pair profiling, the fifth adds profile-guided
-`MemOpIdx` immediate gadgets for the common visual-novel memory modes, and the
-sixth adds the matching byte-store gadget for the observed `0x5e03` mode.
+`MemOpIdx` immediate gadgets for the common visual-novel memory modes, the
+sixth adds the matching byte-store gadget for the observed `0x5e03` mode, and
+the seventh emits private TCTI gadgets as file-scope assembly so Clang does
+not append an unreachable trap instruction to every gadget.
 Generic load/store thunks remain the fallback for unprofiled modes. Madeira-SE
 uses the full QEMU x86 translator and TCG implementation. TCTI emits queues of pointers
 to precompiled AArch64 gadgets, so it does not allocate JIT code pages or
