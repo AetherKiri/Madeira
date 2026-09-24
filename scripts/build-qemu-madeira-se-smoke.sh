@@ -97,6 +97,11 @@ if ! grep -R -q 'gadget_qemu_ld_leul_unaligned_mode5023_off32_i32' \
     echo "error: profile-guided MemOp fastpath gadgets were not generated" >&2
     exit 1
 fi
+if ! grep -R -q 'gadget_qemu_st_ub_unaligned_mode5e03_off32_i32' \
+    "$BUILD_DIR/tcg"; then
+    echo "error: byte-store MemOp fastpath gadgets were not generated" >&2
+    exit 1
+fi
 
 PROBE_SOURCE="$REPO_ROOT/madeira-se/tools/qemu_shared_probe.c"
 PROBE_BINARY="$BUILD_DIR/madeira-se-qemu-shared-probe"

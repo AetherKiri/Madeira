@@ -58,6 +58,14 @@ stall during the measured window. The title also performs a long asset and
 script phase before it settles into its menu, so Present FPS is reported from
 the native DXMT Present counter rather than inferred from GPU timing.
 
+The byte-store half of the same `MemOpIdx` specialization is now covered by a
+precompiled `0x5e03` `strb` gadget. It preserves the generic miss helper and
+alignment selection while removing the operation-index fetch on a TLB hit. The
+60-second A7-3 sample after this change measured 2.95 Present FPS at 90.27%
+average process CPU, within the run-to-run noise of the earlier 3 FPS samples.
+It is retained for coverage and a low-risk hot path, but it is not claimed as
+a material FPS improvement.
+
 With `MADEIRA_SE_PERF_STATS=1`, one active A7 title window counted about
 1.59 billion guest instructions and 174.8 million TCTI TB entries, while only
 245 thousand TBs needed translation. The translated TBs covered about 1.38

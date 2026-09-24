@@ -69,9 +69,15 @@ for patch_file in "${patches[@]}"; do
     elif [[ "$patch_name" == "0005-madeira-se-tcti-memop-fastpath.patch" ]] \
             && grep -q "MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS" \
                 "$QEMU_SOURCE/system/madeira-se-tcti-perf.c" \
-            && grep -q "mode5023" \
+            && grep -q '(0x5023, "leul"' \
                 "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
         echo "Madeira-SE TCTI MemOp fastpath patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0006-madeira-se-tcti-byte-store-fastpath.patch" ]] \
+            && grep -q "args\[2\] == 0x5e03" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcg-target.c.inc" \
+            && grep -q '(0x5e03, "ub"' \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
+        echo "Madeira-SE TCTI byte-store fastpath patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2
