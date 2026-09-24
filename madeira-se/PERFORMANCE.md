@@ -74,6 +74,15 @@ shipping build. A global uninitialized-variable switch was also rejected after
 it made the Wine server unstable; only the explicitly scoped TCTI temporary
 frame optimization remains enabled.
 
+Two more isolated A/B experiments were rejected. Reordering the precompiled
+gadget functions to place the most frequently sampled register variants
+together produced 3.11 FPS in one 60-second run and 2.85 FPS in the repeat;
+the default was 2.89 FPS in the paired run, so there is no repeatable locality
+gain. Passing the TCTI entry values through compiler register operands also
+passed both architecture probes, but its A7 run measured 2.72 FPS versus 2.89
+FPS for the default entry path. Neither experiment changes the shipping
+runtime.
+
 With `MADEIRA_SE_PERF_STATS=1`, one active A7 title window counted about
 1.59 billion guest instructions and 174.8 million TCTI TB entries, while only
 245 thousand TBs needed translation. The translated TBs covered about 1.38
