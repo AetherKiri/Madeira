@@ -173,3 +173,13 @@ workload requires roughly an order of magnitude more CPU throughput; changing
 the Metal presentation path alone cannot provide that gain. All proposed
 changes must keep the no-runtime-code-generation policy required by the App
 Store.
+
+A direct-branch predictor experiment emitted sixteen identical `br` gadgets and
+cycled them at translation time. The i386/x86-64 probes and the full Wine/DXMT
+smoke matrix passed, but the A7-3 run measured 2.97 Present FPS; paired runs
+remained in the existing 2.9–3.0 FPS noise band rather than approaching the
+4.74–4.83 FPS stable p8 reference. It is not part of the runtime. A second
+experiment cached the common -224 soft-MMU mask/table pair in the TCTI entry;
+the i386 shared-library probe faulted before initialization, so that hard-coded
+entry cache was removed as well. These results leave the p8 fused icount
+preamble as the last validated TCTI hot-path change.
