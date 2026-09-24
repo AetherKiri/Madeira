@@ -102,10 +102,17 @@ invalidation behavior for compatibility.
 
 A prototype that fused the common `mb_ld` followed by `qemu_ld_i32` pair was
 also rejected. The generator and shared-library probes passed after a clean
-rebuild, but the 60-second A7-3 run still triggered a wineserver crash and
-measured 2.92 Present FPS at 89.43% average CPU. Since it provided no
-repeatable speedup and failed the stability gate, the fusion code is not part
-of the runtime.
+rebuild, and the 60-second A7-3 run measured 2.92 Present FPS at 89.43%
+average CPU, matching the default build within noise. The FPS runner stops the
+Wine server at the end of its time limit; its resulting `wineserver crashed`
+line also appears in default-build logs and is not evidence of a fusion fault.
+The fusion code is not part of the runtime because it showed no speedup.
+
+A second experiment fused adjacent pure-register `mov_i32`/`mov_i64` gadgets.
+It passed both architecture smoke probes and two 60-second A7-3 runs, but the
+Present results were 3.05 FPS and 2.65 FPS, versus 2.80 FPS for the paired
+default run. The spread is run-to-run noise, so the extra 16⁴ gadget tables
+and stream rewrite are rejected as well.
 
 The next performance work should target TCTI dispatch and translation-cache
 reuse with per-title regression coverage. Reaching 30 FPS for this workload
