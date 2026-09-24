@@ -51,6 +51,27 @@ for patch_file in "${patches[@]}"; do
         # accepted after the forward and reverse checks have both failed, so
         # partially applied patches still stop with an error below.
         echo "Madeira-SE QEMU embedding adapter is already applied: $patch_name"
+    elif [[ "$patch_name" == "0002-madeira-se-tcti-performance.patch" ]] \
+            && [[ -f "$QEMU_SOURCE/system/madeira-se-tcti-perf.c" ]] \
+            && grep -q "Madeira-SE TCTI throughput counters" \
+                "$QEMU_SOURCE/system/madeira-se-tcti-perf.c" \
+            && grep -q "madeira_se_tcti_perf_note_translation" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcg-target.c.inc"; then
+        echo "Madeira-SE TCTI performance patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0003-madeira-se-tcti-tlb-fastpath.patch" ]] \
+            && grep -q "off272_i64" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcg-target.c.inc"; then
+        echo "Madeira-SE TCTI TLB fastpath patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0004-madeira-se-tcti-opcode-profile.patch" ]] \
+            && grep -q "madeira_se_tcti_perf_note_opcode_pair" \
+                "$QEMU_SOURCE/system/madeira-se-tcti-perf.c"; then
+        echo "Madeira-SE TCTI opcode profile patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0005-madeira-se-tcti-memop-fastpath.patch" ]] \
+            && grep -q "MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS" \
+                "$QEMU_SOURCE/system/madeira-se-tcti-perf.c" \
+            && grep -q "mode5023" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
+        echo "Madeira-SE TCTI MemOp fastpath patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

@@ -37,6 +37,20 @@ A7 payload, the final 40-second run measured 3.93 DXMT Present FPS versus the
 3.06 safe-build result (about 28%); it remains below the 30 FPS target and is
 guarded by the full i386/x86-64 DXMT regression suite.
 
+The opt-in TCTI profile also records the static `MemOpIdx` values used by
+translated blocks. In the A7-3 sample, i386 loads and stores were dominated by
+`0x5023` (32-bit), followed by `0x5013` (16-bit) and `0x5e03` (byte); the
+profile is enabled only with `MADEIRA_SE_PERF_STATS=1` and is not part of the
+shipping hot path. Madeira-SE now emits precompiled immediate-specialized
+gadgets for those exact modes, plus the observed `0x5033` 64-bit store, while
+retaining the generic TCTI thunk for every other mode. The specialized path
+keeps the same soft-MMU miss helper and alignment decision, but avoids reading
+the operation index from the bytecode stream and avoids its pointer increment
+on a TLB hit. A 45-second post-change A7 run measured 3.10 Present FPS with
+88.04% average process CPU; this is a small, noisy improvement over the prior
+2.87 FPS sample, so it is treated as a low-risk incremental optimization, not
+as evidence that the 30 FPS target has been reached.
+
 The samples show the CPU-side TCTI interpreter as the limiting resource:
 `cpu_tb_exec`, `tcg_qemu_tb_exec`, and the generated AArch64 gadget calls
 dominate the busy thread. DXMT reports no drawable wait or Metal command queue

@@ -92,6 +92,11 @@ if ! grep -q 'The tcg interpreter does not need execute permission' \
     echo "error: pinned QEMU no longer contains the non-executable TCTI buffer path" >&2
     exit 1
 fi
+if ! grep -R -q 'gadget_qemu_ld_leul_unaligned_mode5023_off32_i32' \
+    "$BUILD_DIR/tcg"; then
+    echo "error: profile-guided MemOp fastpath gadgets were not generated" >&2
+    exit 1
+fi
 
 PROBE_SOURCE="$REPO_ROOT/madeira-se/tools/qemu_shared_probe.c"
 PROBE_BINARY="$BUILD_DIR/madeira-se-qemu-shared-probe"

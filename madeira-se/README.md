@@ -213,12 +213,15 @@ programs, not application exit-code conventions.
 The QEMU revision is locked in `deps/qemu-tcti.lock`. The fetch step applies
 the ordered patches in `patches/qemu-tcti/`: the first embeds the x86/TCTI
 adapter, the second adds no-JIT throughput counters plus TCTI hot-path
-optimizations, and the third enables the current soft-MMU TLB gadget offsets.
-Madeira-SE uses the full QEMU x86 translator and TCG implementation. TCTI emits
-queues of pointers to precompiled AArch64 gadgets, so it does not allocate JIT
-code pages or generate new executable instructions at runtime. Release builds
-select QEMU's `nop` trace backend because the standalone app does not expose
-QEMU trace logging.
+optimizations, the third enables the current soft-MMU TLB gadget offsets, the
+fourth adds opt-in opcode-pair profiling, and the fifth adds profile-guided
+`MemOpIdx` immediate gadgets for the common visual-novel memory modes. Generic
+load/store thunks remain the fallback for unprofiled modes. Madeira-SE uses the
+full QEMU x86 translator and TCG implementation. TCTI emits queues of pointers
+to precompiled AArch64 gadgets, so it does not allocate JIT code pages or
+generate new executable instructions at runtime. Release builds select QEMU's
+`nop` trace backend because the standalone app does not expose QEMU trace
+logging.
 
 The QEMU build emits `libqemu-i386-softmmu.dylib` and
 `libqemu-x86_64-softmmu.dylib`; Madeira-SE embeds their CPU/TCG pieces and uses

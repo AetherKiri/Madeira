@@ -302,7 +302,7 @@ index 8b78abe..93f6598 100644
 +     * 1 KiB call frame on every translation block only adds work to the hot
 +     * path.  Mark the frame explicitly uninitialized while keeping the
 +     * hardening default for the rest of QEMU.
-+     */
++    */
 +    long tcg_temps[CPU_TEMP_BUF_NLONGS] __attribute__((uninitialized));
  
      uint64_t return_value = 0;
