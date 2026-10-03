@@ -1251,13 +1251,14 @@ int main(int argc, char **argv)
     }
     /* D3D9 applications commonly recreate their swapchain when the user
      * chooses windowed mode.  The standalone Cocoa drawable is already the
-     * live presentation target, so keep it across that Reset() call.  Also
-     * use the single threaded command stream by default for a D3D9 title: it
-     * avoids a race between the 32-bit WoW64 guest and the native presentation
-     * thread during the first frame.  Do not force that global Wine setting
-     * for D3D11/OpenGL-only programs; DXMT's x86-64 D3D11 path needs the
-     * normal command stream.  MADEIRA_SE_D3D9_CSMT=0|1 and an explicit
-     * WINE_D3D_CONFIG remain diagnostic overrides. */
+     * live presentation target, so keep it across that Reset() call.  Use
+     * Wine's normal command stream by default: legacy visual-novel engines
+     * often submit texture uploads and the first present from different
+     * threads, and their title page can remain black with csmt=0.  Do not
+     * force that global Wine setting for D3D11/OpenGL-only programs; DXMT's
+     * x86-64 D3D11 path needs the normal command stream as well.  The
+     * MADEIRA_SE_D3D9_CSMT=0|1 and explicit WINE_D3D_CONFIG values remain
+     * diagnostic overrides. */
     if (executable_uses_d3d9) {
         const char *requested_csmt = getenv("MADEIRA_SE_D3D9_CSMT");
         const char *wine_d3d_config = getenv("WINE_D3D_CONFIG");
@@ -1274,7 +1275,7 @@ int main(int argc, char **argv)
             return 1;
         }
         if (wine_d3d_config == NULL) {
-            if (requested_csmt == NULL) requested_csmt = "0";
+            if (requested_csmt == NULL) requested_csmt = "1";
             snprintf(csmt_config, sizeof(csmt_config), "csmt=%s", requested_csmt);
             if (setenv("WINE_D3D_CONFIG", csmt_config, 1) != 0) {
                 fprintf(stderr, "cannot configure standalone D3D9 compatibility: %s\n",
@@ -1298,6 +1299,21 @@ int main(int argc, char **argv)
         fprintf(stderr, "Madeira-SE: window size=%s (client area)\n", window_size);
     else
         fprintf(stderr, "Madeira-SE: window size=application controlled\n");
+    /* A standalone client area is a windowed presentation target.  Older
+     * visual-novel engines ask this exact question in a native modal dialog
+     * before creating D3D9; without a host answer they remain blocked in
+     * GetMessage forever.  Let the native Wine driver select its Window
+     * button when the launcher has already fixed a client size.  Callers can
+     * opt out with MADEIRA_SE_AUTO_WINDOW_MODE=0. */
+    if (window_size != NULL && getenv("MADEIRA_SE_AUTO_WINDOW_MODE") == NULL &&
+        setenv("MADEIRA_SE_AUTO_WINDOW_MODE", "windowed", 1) != 0) {
+        fprintf(stderr, "cannot configure standalone window-mode selection: %s\n",
+                strerror(errno));
+        return 1;
+    }
+    if (getenv("MADEIRA_SE_AUTO_WINDOW_MODE") != NULL)
+        fprintf(stderr, "Madeira-SE: automatic window-mode selection=%s\n",
+                getenv("MADEIRA_SE_AUTO_WINDOW_MODE"));
     if (fps_cap != NULL)
         fprintf(stderr, "Madeira-SE: FPS cap=%s (present pacing)\n", fps_cap);
     if (dxmt_dir != NULL && setenv("MADEIRA_SE_DXMT_DIR", dxmt_dir, 1) != 0) {

@@ -13,7 +13,7 @@ duration="${MADEIRA_SE_FPS_DURATION:-15}"
 warmup="${MADEIRA_SE_FPS_WARMUP:-3}"
 budget="${MADEIRA_SE_CPU_RUN_BUDGET:-8000000}"
 reuse_slices="${MADEIRA_SE_CPU_REUSE_SLICES:-0}"
-csmt="${MADEIRA_SE_FPS_CSMT:-0}"
+csmt="${MADEIRA_SE_FPS_CSMT:-1}"
 vsync="${MADEIRA_SE_FPS_VSYNC:-1}"
 fps_cap="${MADEIRA_SE_FPS_CAP:-30}"
 virtual_mode="${MADEIRA_SE_D3D9_VIRTUAL_MODE:-1280x720}"
@@ -30,7 +30,7 @@ Usage: scripts/run-madeira-se-fps.sh [options]
   --duration SECONDS         total run time (default: 15)
   --warmup SECONDS           samples to exclude (default: 3)
   --budget INSTRUCTIONS      TCTI run budget (default: 8000000)
-  --csmt 0|1                 Wine command stream mode (default: 0)
+  --csmt 0|1                 Wine command stream mode (default: 1)
   --vsync 0|1                swap interval (default: 1; 0 measures raw throughput)
   --fps-cap FPS              presentation cap, 0 disables (default: 30)
   --window-size WxH          host client area (default: D3D9 virtual mode)

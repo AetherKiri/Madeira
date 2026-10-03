@@ -126,6 +126,11 @@ read in place. The launcher does not fabricate a title's installation or
 copy-protection key files.
 `--desktop` is an explicit compatibility fallback for a title that needs
 Wine's shell; ordinary visual novels use the headless direct path.
+When `--window-size` is supplied, the launcher automatically answers the
+common Japanese display-mode dialog with `Window` through Wine's input queue.
+This lets legacy titles reach their first Direct3D device without macOS
+Accessibility permissions or host-side mouse injection. Set
+`MADEIRA_SE_AUTO_WINDOW_MODE=0` to leave that dialog for the user.
 Some DirectX 9 visual novels reject Retina-scaled macOS display modes before
 creating a device. For Wine's wined3d path, opt in to the capability shim with
 `--d3d9-virtual-mode 1920x1080`. It adds a 1920×1080 mode and reports that mode
@@ -145,16 +150,16 @@ restores the Wine module explicitly. Explicit `dxmt` is useful for a title that
 loads D3D9 dynamically and has no import-table marker.
 
 Standalone launches for a D3D9 title enable the D3D9 window-reset
-compatibility path and use Wine's single-threaded command stream by default.
-This keeps the first Cocoa drawable alive when a legacy engine creates its
-main window and immediately calls `IDirect3DDevice9::Reset`. The launcher does
-not force that global Wine setting for D3D11/OpenGL-only programs, since the
-x86-64 DXMT D3D11 path uses the normal command stream. Explicit
-`MADEIRA_SE_D3D9_SOFT_RESET`, `MADEIRA_SE_D3D9_CSMT=0|1`, and
-`WINE_D3D_CONFIG` values still override those defaults for diagnostics. The
-DXMT backend owns its own Reset/presentation implementation, but the WoW64
-guest still benefits from the serialized command stream during first-frame
-startup.
+compatibility path and use Wine's normal command stream by default. Legacy
+visual-novel engines often submit texture uploads and their first present from
+different threads; forcing `csmt=0` can leave the title page black even though
+DXMT is presenting frames. The launcher does not force a global Wine setting
+for D3D11/OpenGL-only programs, since the x86-64 DXMT D3D11 path already uses
+the normal command stream. Explicit `MADEIRA_SE_D3D9_SOFT_RESET`,
+`MADEIRA_SE_D3D9_CSMT=0|1`, and `WINE_D3D_CONFIG` values still override those
+defaults for diagnostics. The DXMT backend owns its own Reset/presentation
+implementation, while the WoW64 guest keeps the normal stream during first
+frame startup.
 PE32 OpenGL thunks translate object pointers through Madeira-SE's biased guest
 arena while widening `GLintptr` and `GLsizeiptr` as integer values. This is
 required by wined3d buffer uploads and fence synchronization on Apple Silicon.

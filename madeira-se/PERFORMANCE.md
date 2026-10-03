@@ -123,9 +123,11 @@ also stayed within normal noise (3.21 and 3.14 FPS) and is not the default;
 the title exits mostly through Wine calls and exceptions rather than the
 budget boundary.
 
-Resident TCTI context reuse was tested with four consecutive slices. A7-3
-fast-failed in its D3D9 startup before the first Present, so the existing
-default of zero reuse remains required for compatibility.
+Resident TCTI context reuse was tested with four consecutive slices. The
+existing default of zero reuse remains required for compatibility. Earlier
+A7-3 runs that appeared to fail before the first Present were waiting on the
+title's native display-mode dialog; they did not exercise the renderer until
+the `Window` choice was selected.
 
 The FPS runner's DXMT parser was corrected after comparing the raw log with
 the native Present counter. DXMT deliberately prints one checkpoint per 16
@@ -194,7 +196,11 @@ gadget checks pass. Five-run `madeira-se-qemu-backend-probe` medians were about
 333M instructions/s for i386 and 323M instructions/s for x86-64, compared with
 331M and 316M for the p8 layout; this is a small microbenchmark gain rather
 than a claim of a proportional title-level FPS increase. A fresh A7-3 sample
-could not be collected after the host restart because both p8 and the TB-chain
-build stop before the first `D3D9Device created` line while the current Wine
-server exits; the experiment remains guarded by the standalone probes until a
-valid title sample is available.
+after the host restart initially stopped at the native display-mode dialog.
+The standalone launcher now detects that exact dialog and sends `Right` plus
+`Return` through Wine's input queue when a fixed window size is requested. With
+this path enabled, both the p8 runtime and the TB-chain build reach
+`D3D9Device: created successfully` and DXMT `Present #1`; the title page is
+visible in the captured smoke run. The timeout harness may still print a
+trailing `wineserver crashed` line while it tears down the process, so that
+line is not used as a startup failure signal.
