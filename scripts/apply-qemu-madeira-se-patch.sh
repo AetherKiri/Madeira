@@ -96,6 +96,12 @@ for patch_file in "${patches[@]}"; do
             && grep -q 'simple("br_tb"' \
                 "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
         echo "Madeira-SE TCTI TB-chain fastpath patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0010-madeira-se-tcti-helper-result-fastpath.patch" ]] \
+            && grep -q "helper result stays in x0" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py" \
+            && grep -q "helper result remains in x0" \
+                "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
+        echo "Madeira-SE TCTI helper-result fastpath patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

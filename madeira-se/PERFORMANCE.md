@@ -204,3 +204,13 @@ this path enabled, both the p8 runtime and the TB-chain build reach
 visible in the captured smoke run. The timeout harness may still print a
 trailing `wineserver crashed` line while it tears down the process, so that
 line is not used as a startup failure signal.
+
+The next low-risk TCTI change keeps a slow-path helper's return value in `x0`
+while `C_CALL_EPILOGUE` restores the interpreter-owned registers. The previous
+sequence copied the result to `x27` and copied it back after the epilogue; the
+generic helper call made the same unnecessary round trip. Removing those moves
+shortens the helper-return path without changing the call ABI or the generated
+gadget count. Both i386 and x86-64 backend probes, the complete Wine/DXMT GUI
+smoke matrix, and D3D9 device creation passed with the change. It is retained as
+a small compatibility-safe optimization; the A7-3 title still needs deeper TCTI
+dispatch work before a 30-FPS claim is justified.
