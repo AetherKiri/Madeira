@@ -182,4 +182,19 @@ remained in the existing 2.9–3.0 FPS noise band rather than approaching the
 experiment cached the common -224 soft-MMU mask/table pair in the TCTI entry;
 the i386 shared-library probe faulted before initialization, so that hard-coded
 entry cache was removed as well. These results leave the p8 fused icount
-preamble as the last validated TCTI hot-path change.
+preamble as the last title-level FPS improvement.
+
+The next experiment shortened linked translation-block edges. A normal
+`goto_tb` edge previously loaded the target stream pointer, loaded its first
+gadget, and branched. The new `br_tb` gadget stores the target gadget and the
+stream body in adjacent relocation slots, then loads both with one `ldp` before
+the branch. The reset path uses the same layout, so unlinking and invalidation
+keep their existing semantics. Both architecture probes and the generated
+gadget checks pass. Five-run `madeira-se-qemu-backend-probe` medians were about
+333M instructions/s for i386 and 323M instructions/s for x86-64, compared with
+331M and 316M for the p8 layout; this is a small microbenchmark gain rather
+than a claim of a proportional title-level FPS increase. A fresh A7-3 sample
+could not be collected after the host restart because both p8 and the TB-chain
+build stop before the first `D3D9Device created` line while the current Wine
+server exits; the experiment remains guarded by the standalone probes until a
+valid title sample is available.

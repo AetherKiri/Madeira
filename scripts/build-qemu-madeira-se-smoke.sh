@@ -106,6 +106,10 @@ if ! grep -R -q 'private_extern _gadget_' "$BUILD_DIR/tcg"; then
     echo "error: TCTI gadgets were not emitted as private file-scope assembly" >&2
     exit 1
 fi
+if ! grep -R -q 'gadget_br_tb' "$BUILD_DIR/tcg"; then
+    echo "error: TCTI TB-chain fastpath gadget was not generated" >&2
+    exit 1
+fi
 if grep -R -q '__attribute__((naked))' "$BUILD_DIR/tcg"/tcti_*_gadgets.c; then
     echo "error: generated TCTI gadgets still use trap-appending naked C wrappers" >&2
     exit 1
