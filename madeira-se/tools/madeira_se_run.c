@@ -1213,6 +1213,7 @@ int main(int argc, char **argv)
     }
     if (setenv("MADEIRA_SE_RUNTIME_LIBRARY", runtime_library, 1) != 0 ||
         setenv("MADEIRA_SE_QEMU_LIBRARY", qemu_library, 1) != 0 ||
+        setenv("MADEIRA_SE_HOST_DIR", host_dir, 1) != 0 ||
         setenv("MADEIRA_SE_GUEST_BUILD_DIR", guest_dir, 1) != 0 ||
         setenv("MADEIRA_SE_HOST_NTDLL", host_ntdll_library, 1) != 0 ||
         setenv("MADEIRA_SE_GUEST_ARCH", architecture_name(architecture), 1) != 0 ||

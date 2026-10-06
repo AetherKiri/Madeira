@@ -88,6 +88,35 @@ cmake --build build/madeira-se-core --parallel 2 --target madeira-se-run
 MADEIRA_SE_QEMU_LTO=true ./scripts/configure-qemu-madeira-se.sh build/madeira-se-qemu-lto
 ```
 
+### Native macOS smoke test
+
+On an Apple Silicon Mac, the standalone host can be built and checked without
+starting a Wine desktop shell. The host is ARM64 Mach-O; PE32 and PE32+
+executables stay in the split Wine guest tree and use the no-JIT QEMU/TCTI
+backend. DXMT supplies the native Metal bridge and its i386/x86-64 D3D
+modules.
+
+```sh
+# Requires prebuilt split Wine, QEMU/TCTI, and DXMT artifacts in build/.
+./scripts/build-madeira-se-macos.sh
+
+# A bounded launch is used for smoke testing; status 142 means the timeout
+# fired after the process was still running.
+./scripts/test-madeira-se-macos.sh \
+  --require-d3d9 --duration 20 \
+  '/Users/chunyanli/Workspace/LOVEPICAL-POPPY!/LoveHp.exe'
+
+# Re-run without rebuilding the core and SDK runtime.
+./scripts/test-madeira-se-macos.sh --no-build \
+  --duration 20 '/path/to/title.exe'
+```
+
+The test chooses `libqemu-i386-softmmu.dylib` for PE32 and
+`libqemu-x86_64-softmmu.dylib` for PE32+, sets the executable directory as
+the default working directory and writable `%APPDATA%` root, and reports the
+DXMT D3D9 device/backbuffer line when the title reaches its first frame. A
+full log is kept under `build/madeira-se-macos/`.
+
 Set `MADEIRA_SE_BUILD_DIR` when the build output should live somewhere other
 than `/tmp/madeira-se-build`.
 
