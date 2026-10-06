@@ -47,6 +47,7 @@
 #include "wincrypt.h"
 #include "crypt32_private.h"
 #include "wine/debug.h"
+#include "ios_wow.h"
 
 WINE_DEFAULT_DEBUG_CHANNEL(crypt);
 

@@ -37,6 +37,9 @@
 #include "immdev.h"
 #include "wine/debug.h"
 
+/* syscall_ios.c owns the per-pseudo-process allocation ceiling. */
+extern ULONG_PTR win32u_zero_bits(void);
+
 WINE_DEFAULT_DEBUG_CHANNEL(msg);
 WINE_DECLARE_DEBUG_CHANNEL(key);
 WINE_DECLARE_DEBUG_CHANNEL(relay);
@@ -1940,7 +1943,7 @@ void pack_user_message( void *buffer, size_t size, UINT message,
 
                 extra_buffer_size = cds->cbData;
                 /* the CALLING pseudo-process's ceiling (win32u is shared by the session) */
-    status = NtAllocateVirtualMemory( GetCurrentProcess(), ret_extra_buffer, caller_zero_bits(),
+                status = NtAllocateVirtualMemory( GetCurrentProcess(), ret_extra_buffer, win32u_zero_bits(),
                                                   &extra_buffer_size, MEM_RESERVE | MEM_COMMIT,
                                                   PAGE_READWRITE );
                 if (!status)

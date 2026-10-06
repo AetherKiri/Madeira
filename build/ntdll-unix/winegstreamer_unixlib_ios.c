@@ -269,6 +269,7 @@
 #include "mferror.h"
 
 #include "unixlib.h"
+#include "ios_wow.h"
 
 /* XMA is not in mmreg.h (it is an Xbox-era tag that never reached the public
  * SDK header), and neither is the WAVEFORMATEXTENSIBLE subformat base. */

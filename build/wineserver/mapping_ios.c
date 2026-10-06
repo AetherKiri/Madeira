@@ -50,6 +50,14 @@ extern void ws_log(const char *fmt, ...);
 #include "request.h"
 #include "security.h"
 
+/* mach_ios.c and mapping.c need the same WoW64 predicate, but the upstream
+ * helper is static in process.h. Export one iOS-side spelling for the
+ * single-process server archive. */
+int ios_process_is_wow64( struct process *process )
+{
+    return is_wow64_process( process );
+}
+
 /* ml936: iOS reserves the low 4GB of every task; no PE can be mapped below it.
  * Measured four ways -- see reference_ios_va_budget and the ml938 block in
  * signal_arm64_ios.c. */

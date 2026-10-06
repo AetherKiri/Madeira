@@ -51,6 +51,7 @@
 #include "wine/nsi.h"
 #include "wine/server.h"
 #include "wine/unixlib.h"   /* ios_wow_host_ptr() for the wow64 table below */
+#include "ios_wow.h"
 
 /* nsi_network_ios.c: the interface, address and route tables. */
 NTSTATUS nsi_enumerate_all_ex( struct nsi_enumerate_all_ex *params );

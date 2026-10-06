@@ -2015,6 +2015,26 @@ static const void *get_module_data_dir( HMODULE module, ULONG dir, ULONG *size )
     return get_rva( module, data->VirtualAddress );
 }
 
+#if defined(__APPLE__) && defined(__aarch64__)
+/* Resolve an export from either a biased PE32 image or a direct PE32+ image.
+ * The iOS loader is a fork of Wine's loader.c, so keep this helper beside the
+ * local export walkers instead of relying on the upstream translation unit. */
+void *madeira_se_find_guest_export( HMODULE module, const char *name )
+{
+    ULONG_PTR address = (ULONG_PTR)module;
+    HMODULE host_module = module;
+    const IMAGE_EXPORT_DIRECTORY *exports;
+
+    if (address >= MADEIRA_SE_WOW64_LOWEST_USER_ADDRESS && address < (1ULL << 32))
+        host_module = madeira_se_wow64_guest_to_host( address );
+    if (!host_module || !(exports = get_module_data_dir( host_module,
+                                                          IMAGE_DIRECTORY_ENTRY_EXPORT,
+                                                          NULL )))
+        return NULL;
+    return (void *)find_named_export( host_module, exports, name );
+}
+#endif
+
 /***********************************************************************
  *           load_ntdll_functions
  */
