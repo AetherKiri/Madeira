@@ -4,11 +4,11 @@
 	branch = ios-port-2607
 [submodule "wine"]
 	path = wine
-	url = https://github.com/willfaust/wine.git
-	branch = madeira-lgpl
+	url = git@github.com:AetherKiri/wine.git
+	branch = ios-build
 [submodule "dxmt"]
 	path = dxmt
-	url = https://github.com/willfaust/dxmt.git
+	url = git@github.com:AetherKiri/dxmt.git
 	branch = ios-port
 [submodule "madeira-dock"]
 	path = madeira-dock
