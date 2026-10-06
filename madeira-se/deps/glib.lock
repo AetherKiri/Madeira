@@ -1,0 +1,4 @@
+# Static GLib used by the App Store QEMU TCTI target.
+GLIB_VERSION=2.84.2
+GLIB_URL=https://download.gnome.org/sources/glib/2.84/glib-2.84.2.tar.xz
+GLIB_SHA512=430928d7d7a442fc3927ca943f2569035fe8768768a0ebc6720ae1ef152b56fc5f8d4215d21b4828cc2f39a8632c907ed2c52a0c8566da1c533a2e049a1a121f

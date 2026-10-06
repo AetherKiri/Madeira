@@ -14,6 +14,36 @@ CONFIGURE_LOG="${MADEIRA_SE_QEMU_CONFIGURE_LOG:-$REPO_ROOT/build/madeira-se-qemu
 # is very high. Keep normal builds usable on development machines and let
 # release builders opt in explicitly with MADEIRA_SE_QEMU_LTO=true.
 QEMU_LTO="${MADEIRA_SE_QEMU_LTO:-false}"
+QEMU_SDK="${MADEIRA_SE_QEMU_SDK:-}"
+QEMU_ARCH="${MADEIRA_SE_QEMU_ARCH:-arm64}"
+QEMU_HOST_CPU="${MADEIRA_SE_QEMU_CPU:-aarch64}"
+QEMU_MIN_VERSION="${MADEIRA_SE_QEMU_MIN_VERSION:-17.0}"
+QEMU_PKG_CONFIG_PATH="${MADEIRA_SE_QEMU_PKG_CONFIG_PATH:-}"
+
+# The iOS linker must never consume Homebrew's macOS GLib. The dedicated
+# dependency script writes a target-only pkg-config prefix; use it
+# automatically when it is already present, while leaving host builds
+# untouched.
+if [[ -z "$QEMU_PKG_CONFIG_PATH" && -n "$QEMU_SDK" ]]; then
+    default_glib_pkgconfig="$REPO_ROOT/build/madeira-se-glib-ios-prefix/lib/pkgconfig"
+    if [[ -d "$default_glib_pkgconfig" ]]; then
+        QEMU_PKG_CONFIG_PATH="$default_glib_pkgconfig"
+    fi
+fi
+
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
+
+# Cross builds must resolve GLib and its transitive dependencies for the
+# target SDK.  A host pkg-config entry would otherwise select Homebrew's
+# macOS dylib and fail at the final iOS link.  Keep the target directory first
+# and, when explicitly supplied, prevent host search-path fallback entirely.
+if [[ -n "$QEMU_PKG_CONFIG_PATH" ]]; then
+    export PKG_CONFIG_PATH="$QEMU_PKG_CONFIG_PATH${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+    export PKG_CONFIG_LIBDIR="${MADEIRA_SE_QEMU_PKG_CONFIG_LIBDIR:-$QEMU_PKG_CONFIG_PATH}"
+    echo "Target pkg-config path: $QEMU_PKG_CONFIG_PATH"
+fi
 
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 [build-directory]" >&2
@@ -104,9 +134,40 @@ if [[ "$QEMU_LTO" == true ]]; then
     qemu_lto_args+=("-Db_lto=true")
 fi
 
+qemu_tool_args=()
+qemu_extra_cflags=""
+qemu_extra_ldflags=""
+if [[ -n "$QEMU_SDK" ]]; then
+    sdk_path="$(xcrun --sdk "$QEMU_SDK" --show-sdk-path)"
+    qemu_cc="$(xcrun --sdk "$QEMU_SDK" --find clang)"
+    qemu_cxx="$(xcrun --sdk "$QEMU_SDK" --find clang++)"
+    qemu_ar="$(xcrun --sdk "$QEMU_SDK" --find ar)"
+    qemu_ranlib="$(xcrun --sdk "$QEMU_SDK" --find ranlib)"
+    qemu_strip="$(xcrun --sdk "$QEMU_SDK" --find strip)"
+    qemu_nm="$(xcrun --sdk "$QEMU_SDK" --find nm)"
+    host_cc="$(xcrun --sdk macosx --find clang)"
+    qemu_target="${QEMU_ARCH}-apple-ios"
+    qemu_extra_cflags="-target $qemu_target -isysroot $sdk_path -miphoneos-version-min=$QEMU_MIN_VERSION"
+    qemu_extra_ldflags="$qemu_extra_cflags"
+    # An empty --cross-prefix still switches QEMU's configure to Meson's
+    # cross-file mode; the explicit tool paths above keep the host generator
+    # and target library compilers separate.
+    qemu_tool_args+=(
+        "--cross-prefix="
+        "--cc=$qemu_cc"
+        "--cxx=$qemu_cxx"
+        "--host-cc=$host_cc"
+        "--cpu=$QEMU_HOST_CPU"
+    )
+    export AR="$qemu_ar" RANLIB="$qemu_ranlib" STRIP="$qemu_strip" NM="$qemu_nm"
+    echo "Apple target SDK: $QEMU_SDK ($sdk_path)"
+    echo "Apple target architecture: $qemu_target"
+fi
+
 if ! (
     cd "$BUILD_DIR"
     "$QEMU_SOURCE/configure" \
+        "${qemu_tool_args[@]+${qemu_tool_args[@]}}" \
         --target-list=x86_64-softmmu,i386-softmmu \
         --without-default-features \
         --enable-system \
@@ -119,7 +180,8 @@ if ! (
         -Dmadeira_se_performance=true \
         -Dtrace_backends=nop \
         "${qemu_lto_args[@]+${qemu_lto_args[@]}}" \
-        --extra-cflags="-I$REPO_ROOT/madeira-se/include" \
+        --extra-cflags="-I$REPO_ROOT/madeira-se/include $qemu_extra_cflags" \
+        --extra-ldflags="$qemu_extra_ldflags" \
         --without-default-devices \
         --disable-docs \
         --disable-tools \

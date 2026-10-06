@@ -1262,6 +1262,19 @@ struct ContentView: View {
         case unavailable
     }
 
+    /// CPU backend selected for new App Store builds. Madeira-SE is the
+    /// no-runtime-codegen path: QEMU's AArch64 TCTI backend interprets x86
+    /// instructions without allocating executable translation pages. Keep a
+    /// temporary `cpu=fex` escape hatch while old bundles are being migrated;
+    /// an absent setting deliberately selects TCTI so a fresh install never
+    /// silently falls back to the JIT-only path.
+    private static var madeiraSEEnabled: Bool {
+        let configured = MadeiraConfig.get("cpu")?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let environment = ProcessInfo.processInfo.environment["MADEIRA_CPU_BACKEND"]?.lowercased()
+        let value = environment ?? configured
+        return value != "fex" && value != "jit" && value != "0" && value != "off"
+    }
+
     var body: some View {
         /* ml658: was NavigationView, which is deprecated and — the reason this
          * matters — defaults to a SPLIT VIEW on iPad. TARGETED_DEVICE_FAMILY is
@@ -2381,6 +2394,10 @@ struct ContentView: View {
     /// own list, which attaches and leaves). Without `then`, the library offers
     /// Madeira's Enable JIT instead of starting a launch that cannot get its pool.
     private func jitReadyForLaunch(inLibrary: Bool, entry: UUID? = nil, then launch: (() -> Void)? = nil) -> Bool {
+        if Self.madeiraSEEnabled {
+            logStore.log("[cpu] Madeira-SE TCTI selected; JIT entitlement is not required", level: .success)
+            return true
+        }
         if StikJITHelper.ready { return true }
         if inLibrary, let launch {
             logStore.log("[jit-on-play] JIT is not on: enabling it, then starting the game")
@@ -2530,10 +2547,17 @@ struct ContentView: View {
     /// to prepare code pages. Detach happens after Wine finishes + recovery.
     /// `profile` is a library entry whose launch profile applies to this run.
     private func runWineFullSequence(profile: LibraryEntry? = nil) {
-        guard jit_check_debugged() else {
+        let useMadeiraSE = Self.madeiraSEEnabled
+        guard useMadeiraSE || jit_check_debugged() else {
             logStore.log("JIT not enabled. Press 'Enable JIT' first.", level: .error)
             if profile != nil { LibraryModel.shared.launchFailed() }
             return
+        }
+        if useMadeiraSE {
+            setenv("MADEIRA_CPU_BACKEND", "tcti", 1)
+            logStore.log("[cpu] starting Madeira-SE no-JIT TCTI runtime")
+        } else {
+            setenv("MADEIRA_CPU_BACKEND", "fex", 1)
         }
         // Steam downloads wait for the session, and the app's own Steam connection closes
         // before Valve's client signs in with the same account (SteamOwnedLibrary).
@@ -2872,13 +2896,30 @@ struct ContentView: View {
                 }
             }
 
-            winios_phase("pool-alloc-begin")
-            logStore.log("Allocating \(poolSizeMB)MB JIT pool (BRK will suspend process)...")
-            let t0 = CFAbsoluteTimeGetCurrent()
-            let pool = StikJITHelper.allocatePool(poolSize: poolSizeMB * 1024 * 1024)
-            let elapsed = CFAbsoluteTimeGetCurrent() - t0
-            winios_phase("pool-ready")
-            logStore.log("BRK suspension lasted \(String(format: "%.2f", elapsed))s")
+            /* Madeira-SE owns the x86 execution state in QEMU/TCTI. It never
+             * asks StikDebug for an executable pool; the only generated
+             * memory is RW data and the precompiled TCTI gadgets live in the
+             * signed QEMU image. Keep the old pool path intact behind the
+             * explicit FEX escape hatch so an older development bundle can be
+             * bisected without changing this launch sequence again. */
+            let pool: (rx: UnsafeMutableRawPointer, rw: UnsafeMutableRawPointer, size: Int)?
+            if useMadeiraSE {
+                pool = nil
+                unsetenv("WINE_IOS_JIT_RX")
+                unsetenv("WINE_IOS_JIT_RW")
+                unsetenv("WINE_IOS_JIT_SIZE")
+                setenv("MADEIRA_SE_NO_JIT", "1", 1)
+                winios_phase("tcti-ready")
+                logStore.log("[cpu] TCTI ready; skipping JIT pool allocation")
+            } else {
+                winios_phase("pool-alloc-begin")
+                logStore.log("Allocating \(poolSizeMB)MB JIT pool (BRK will suspend process)...")
+                let t0 = CFAbsoluteTimeGetCurrent()
+                pool = StikJITHelper.allocatePool(poolSize: poolSizeMB * 1024 * 1024)
+                let elapsed = CFAbsoluteTimeGetCurrent() - t0
+                winios_phase("pool-ready")
+                logStore.log("BRK suspension lasted \(String(format: "%.2f", elapsed))s")
+            }
 
             // Arena carver self-test. Documents/madeira-arena-test.txt holds
             // "churn:N", "ramp:N" or "random:N". Deliberately a SEPARATE file
@@ -3036,7 +3077,9 @@ struct ContentView: View {
                 jit_wx_probe()
             }
 
-            if let pool = pool {
+            if useMadeiraSE {
+                /* No executable pool is part of the TCTI contract. */
+            } else if let pool = pool {
                 logStore.log("JIT pool: RX=\(String(format: "%p", Int(bitPattern: pool.rx))), RW=\(String(format: "%p", Int(bitPattern: pool.rw))), size=\(pool.size / 1024 / 1024)MB", level: .success)
                 setenv("WINE_IOS_JIT_RX", String(format: "%lx", Int(bitPattern: pool.rx)), 1)
                 setenv("WINE_IOS_JIT_RW", String(format: "%lx", Int(bitPattern: pool.rw)), 1)
@@ -3086,7 +3129,7 @@ struct ContentView: View {
             // ORDERING MATTERS: our task-port claim installs at wine's first thread
             // setup, which is AFTER this point, so this BRK still reaches StikDebug.
             // Flip to false to A/B against the old attached-for-the-whole-run behaviour.
-            let earlyDetach = true
+            let earlyDetach = !useMadeiraSE
             if earlyDetach, pool != nil {
                 let dt0 = CFAbsoluteTimeGetCurrent()
                 StikJITHelper.detachDebugger()
@@ -3103,7 +3146,7 @@ struct ContentView: View {
             // for this JIT (JITNetwork.swift). The pool is mapped and the debugger is
             // gone, so put them back now: running the shortcut leaves Madeira for a
             // moment, which is safe only before Wine starts drawing.
-            JITNetworkShortcut.restoreBlocking()
+            if !useMadeiraSE { JITNetworkShortcut.restoreBlocking() }
 
             // Step 2: Start wineserver
             self.startWineserver()
@@ -3201,9 +3244,14 @@ struct ContentView: View {
             }
             Thread.sleep(forTimeInterval: 2.0)
 
-            // Step 6: Detach debugger — main thread should have zero accumulated hang time
-            logStore.log("Detaching debugger...")
-            StikJITHelper.detachDebugger()
+            // Step 6: the TCTI path never attached a debugger. The legacy FEX
+            // path detaches here after its final wait as before.
+            if !useMadeiraSE {
+                logStore.log("Detaching debugger...")
+                StikJITHelper.detachDebugger()
+            } else {
+                logStore.log("[cpu] TCTI session finished; no debugger detach required")
+            }
 
             DispatchQueue.main.async {
                 heartbeat.invalidate()

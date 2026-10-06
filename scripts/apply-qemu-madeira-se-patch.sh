@@ -102,6 +102,10 @@ for patch_file in "${patches[@]}"; do
             && grep -q "helper result remains in x0" \
                 "$QEMU_SOURCE/tcg/aarch64-tcti/tcti-gadget-gen.py"; then
         echo "Madeira-SE TCTI helper-result fastpath patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0011-madeira-se-apple-cross-native-sdk.patch" ]] \
+            && grep -q "needs_exe_wrapper = true" "$QEMU_SOURCE/configure" \
+            && grep -q "native_cc_args" "$QEMU_SOURCE/configure"; then
+        echo "Madeira-SE Apple cross native-SDK patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

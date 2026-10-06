@@ -9,6 +9,15 @@ QEMU_SOURCE="${MADEIRA_SE_QEMU_SOURCE:-$REPO_ROOT/.deps/qemu-utm}"
 BUILD_DIR="${MADEIRA_SE_QEMU_BUILD_DIR:-$REPO_ROOT/build/madeira-se-qemu}"
 BUILD_JOBS="${MADEIRA_SE_BUILD_JOBS:-2}"
 BUILD_LOG="${MADEIRA_SE_QEMU_BUILD_LOG:-$REPO_ROOT/build/madeira-se-qemu-build.log}"
+QEMU_SDK="${MADEIRA_SE_QEMU_SDK:-}"
+TARGET_ONLY=0
+case "$QEMU_SDK" in
+    iphoneos*|iphonesimulator*) TARGET_ONLY=1 ;;
+esac
+
+if [[ -z "${DEVELOPER_DIR:-}" && -d /Applications/Xcode.app/Contents/Developer ]]; then
+    export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+fi
 
 if [[ $# -gt 1 ]]; then
     echo "usage: $0 [build-directory]" >&2
@@ -64,6 +73,19 @@ for target in libqemu-x86_64-softmmu.dylib libqemu-i386-softmmu.dylib; do
     if [[ "$file_description" != *"Mach-O 64-bit dynamically linked shared library arm64"* ]]; then
         echo "error: $target is not an arm64 Mach-O shared library" >&2
         exit 1
+    fi
+    if [[ -n "$QEMU_SDK" ]]; then
+        if [[ "$QEMU_SDK" == iphoneos* ]]; then
+            if ! otool -l "$artifact" | grep -qE '^[[:space:]]*platform 2$'; then
+                echo "error: $target is not an iPhoneOS Mach-O library" >&2
+                exit 1
+            fi
+        elif [[ "$QEMU_SDK" == iphonesimulator* ]]; then
+            if ! otool -l "$artifact" | grep -qE '^[[:space:]]*platform 7$'; then
+                echo "error: $target is not an iPhoneSimulator Mach-O library" >&2
+                exit 1
+            fi
+        fi
     fi
     exported_symbols="$(nm -gU "$artifact")"
     for symbol in \
@@ -124,34 +146,38 @@ if [[ ! -f "$PROBE_SOURCE" ]]; then
 fi
 "${CC:-clang}" -std=c11 -Wall -Wextra -Werror "$PROBE_SOURCE" \
     -o "$PROBE_BINARY"
-for architecture in i386 x86_64; do
-    artifact="$BUILD_DIR/libqemu-$architecture-softmmu.dylib"
-    if ! perl -e 'alarm shift; exec @ARGV' 20 "$PROBE_BINARY" "$artifact"; then
-        echo "error: QEMU $architecture shared-library initialization failed" >&2
-        exit 1
-    fi
-done
+if [[ "$TARGET_ONLY" == 0 ]]; then
+    for architecture in i386 x86_64; do
+        artifact="$BUILD_DIR/libqemu-$architecture-softmmu.dylib"
+        if ! perl -e 'alarm shift; exec @ARGV' 20 "$PROBE_BINARY" "$artifact"; then
+            echo "error: QEMU $architecture shared-library initialization failed" >&2
+            exit 1
+        fi
+    done
 
-cmake -S "$REPO_ROOT/madeira-se" -B "$CORE_BUILD_DIR" \
-    -DMADEIRA_SE_BUILD_TESTS=OFF \
-    -DMADEIRA_SE_BUILD_TOOLS=ON >"$BUILD_LOG.core-configure" 2>&1
-cmake --build "$CORE_BUILD_DIR" --parallel "$BUILD_JOBS" \
-    --target \
-        madeira-se-qemu-backend-probe \
-        madeira-se-qemu-runtime-probe >"$BUILD_LOG.core-build" 2>&1
-for architecture in i386 x86_64; do
-    artifact="$BUILD_DIR/libqemu-$architecture-softmmu.dylib"
-    if ! perl -e 'alarm shift; exec @ARGV' 30 \
-            "$CORE_BUILD_DIR/madeira-se-qemu-backend-probe" "$artifact"; then
-        echo "error: QEMU $architecture backend execution probe failed" >&2
-        exit 1
-    fi
-    if ! perl -e 'alarm shift; exec @ARGV' 30 \
-            "$CORE_BUILD_DIR/madeira-se-qemu-runtime-probe" "$artifact"; then
-        echo "error: QEMU $architecture standalone runtime probe failed" >&2
-        exit 1
-    fi
-done
+    cmake -S "$REPO_ROOT/madeira-se" -B "$CORE_BUILD_DIR" \
+        -DMADEIRA_SE_BUILD_TESTS=OFF \
+        -DMADEIRA_SE_BUILD_TOOLS=ON >"$BUILD_LOG.core-configure" 2>&1
+    cmake --build "$CORE_BUILD_DIR" --parallel "$BUILD_JOBS" \
+        --target \
+            madeira-se-qemu-backend-probe \
+            madeira-se-qemu-runtime-probe >"$BUILD_LOG.core-build" 2>&1
+    for architecture in i386 x86_64; do
+        artifact="$BUILD_DIR/libqemu-$architecture-softmmu.dylib"
+        if ! perl -e 'alarm shift; exec @ARGV' 30 \
+                "$CORE_BUILD_DIR/madeira-se-qemu-backend-probe" "$artifact"; then
+            echo "error: QEMU $architecture backend execution probe failed" >&2
+            exit 1
+        fi
+        if ! perl -e 'alarm shift; exec @ARGV' 30 \
+                "$CORE_BUILD_DIR/madeira-se-qemu-runtime-probe" "$artifact"; then
+            echo "error: QEMU $architecture standalone runtime probe failed" >&2
+            exit 1
+        fi
+    done
+else
+    echo "skipped host QEMU/core execution probes for $QEMU_SDK target"
+fi
 
 echo "QEMU i386/x86-64 TCTI embedding smoke test passed."
 echo "The generated translation buffer is RW data; precompiled gadgets live in Mach-O __TEXT."

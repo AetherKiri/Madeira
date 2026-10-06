@@ -81,6 +81,9 @@ cmake --build build/madeira-se-core --parallel 2 --target madeira-se-run
 ./scripts/configure-qemu-madeira-se.sh
 ./scripts/build-qemu-madeira-se-smoke.sh
 
+# Build the App Store target, including static iOS GLib and resource staging.
+./scripts/build-madeira-se-qemu-ios.sh
+
 # Optional: enable QEMU LTO for a release build (high peak linker memory).
 MADEIRA_SE_QEMU_LTO=true ./scripts/configure-qemu-madeira-se.sh build/madeira-se-qemu-lto
 ```

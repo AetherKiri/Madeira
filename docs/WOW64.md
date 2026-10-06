@@ -1,11 +1,24 @@
 # 32-bit Windows programs (WoW64) on Madeira
 
-Madeira runs unmodified 32-bit x86 Windows programs the way Windows on ARM
-does: Wine's own WoW64 layer (`wow64.dll`, `wow64win.dll`) runs as native
-aarch64 code, and only the program's x86 code is translated, by FEX's WOW64
-module (`xtajit.dll`). This page describes the design, what changes for a
-64-bit session (nothing by default), every switch with its default, how to
-build the pieces, and the order the pull requests go in.
+Madeira has two execution profiles. The historical iOS profile below uses
+FEX's JIT-backed WoW64 module. **Madeira-SE**, the App Store profile, keeps the
+same split Wine pointer and guest-window rules but replaces FEX with the full
+QEMU x86 TCG translator and AArch64 TCTI backend. TCTI executes signed,
+precompiled gadgets without allocating executable translation memory, so the
+Madeira-SE path does not require StikDebug, StikJIT, or a JIT entitlement.
+
+The FEX-specific names in the legacy sections are therefore compatibility
+details for the old profile. New launches select `MADEIRA_CPU_BACKEND=tcti`,
+load `libqemu-i386-softmmu.dylib` or `libqemu-x86_64-softmmu.dylib` according
+to the PE header, and use the standalone launcher described in
+`madeira-se/README.md`.
+
+Both profiles run unmodified 32-bit x86 Windows programs through Wine's own
+WoW64 layer (`wow64.dll`, `wow64win.dll`) as native AArch64 code. The legacy
+profile translates the program with FEX's WOW64 module (`xtajit.dll`), while
+Madeira-SE translates it with QEMU's x86 TCG plus AArch64 TCTI. This page
+describes the shared guest-window design and calls out the legacy FEX-specific
+parts where they differ from Madeira-SE.
 
 ## 1. Constraints
 
@@ -16,8 +29,9 @@ build the pieces, and the order the pull requests go in.
 - Every Windows "process" is a pseudo-process (threads) inside the one Mach
   task, so two 32-bit processes share one address space and cannot both own
   `[0, 4G)`.
-- Everything that executes comes from the one dual-mapped RX/RW JIT pool.
-  Nothing inside a guest window is ever mapped executable.
+- In the legacy profile, translated code comes from the dual-mapped RX/RW FEX
+  pool. Madeira-SE keeps guest memory non-executable and executes QEMU's
+  signed TCTI gadgets from its Mach-O `__TEXT` segment.
 - The user address space is either large (512 GB) or small (63 GB on some
   tablets, less on a virtual device). Both must work, and a small map must not
   lose address space to 32-bit support when no 32-bit program runs.

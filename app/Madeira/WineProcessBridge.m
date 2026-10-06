@@ -30,7 +30,18 @@
 #include "WineProcessBridge.h"
 #include "WineServerBridge.h"
 #include "PrefixExtractor.h"
-#include "FEXBridge.h"  // fex_get_jit_write_offset()
+#include "FEXBridge.h"  // compatibility ABI; TCTI builds use the no-JIT stub
+
+/* The TCTI selector is process-wide because Wine's CPU provider is process
+ * wide too. Swift sets MADEIRA_CPU_BACKEND before creating the Wine thread;
+ * keeping the check here makes direct Objective-C test launches behave the
+ * same way as the UI launch path. */
+static BOOL madeira_cpu_backend_is_tcti(void)
+{
+    const char *value = getenv("MADEIRA_CPU_BACKEND");
+    return value && (!strcasecmp(value, "tcti") || !strcasecmp(value, "madeira-se") ||
+                     !strcmp(value, "1"));
+}
 
 // Thread-local globals for wine_ios_exit longjmp (used by wine_ios_exit.h shim in ntdll)
 // Each Wine "process" thread has its own jmpbuf so child processes can exit independently.
@@ -1016,7 +1027,7 @@ static void *wine_process_thread(void *arg) {
          * Wine's GetEnvironmentVariableW. jit_pool_init has already run by
          * now (fex_initialize is a prerequisite for launching the guest),
          * so the offset is available. */
-        {
+        if (!madeira_cpu_backend_is_tcti()) {
             int64_t jit_off = fex_get_jit_write_offset();
             if (jit_off != 0) {
                 char off_str[32];
@@ -1026,6 +1037,9 @@ static void *wine_process_thread(void *arg) {
             } else {
                 LOG("WARNING: fex_get_jit_write_offset() returned 0 — JIT pool not initialized?");
             }
+        } else {
+            unsetenv("MADEIRA_JIT_WRITE_OFFSET");
+            LOG("[cpu] Madeira-SE selected; FEX JIT offset is not published");
         }
 
         /* iOS-Madeira: TSO stays ENABLED (default). The unaligned LDAR/LDAPR/
@@ -1240,6 +1254,57 @@ static void *wine_process_thread(void *arg) {
         const char *bundle_subdir = use_arm64ec ? "arm64ec-windows" : "aarch64-windows";
         LOG("Target exe: %{public}s (bundle=%{public}s)", madeira_exe, bundle_subdir);
         dprintf(STDERR_FILENO, "[WineProc] Target exe: %s (bundle=%s)\n", madeira_exe, bundle_subdir);
+
+        /* Madeira-SE replaces both FEX's ARM64EC bridge and its x86 JIT. The
+         * unix ntdll keeps the Wine host state; QEMU TCTI owns the selected
+         * guest architecture. Point the loader at the guest PE farm and at
+         * the signed runtime/backend files shipped with the app. Environment
+         * overrides remain useful for local smoke runs where the files live
+         * beside the checkout instead of inside an .app bundle. */
+        if (madeira_cpu_backend_is_tcti()) {
+            const char *guest_arch = is_i386_target ? "i386" : "x86_64";
+            const char *guest_farm = is_i386_target ? "i386-windows" : "x86_64-windows";
+            NSString *bundlePath = [[NSBundle mainBundle] bundlePath];
+            NSString *guestDir = [bundlePath stringByAppendingPathComponent:
+                                  [NSString stringWithUTF8String:guest_farm]];
+            NSString *qemuDir = [bundlePath stringByAppendingPathComponent:@"qemu"];
+            NSString *runtimeCandidate = [bundlePath stringByAppendingPathComponent:
+                                          @"libmadeira_se_runtime.dylib"];
+            NSString *runtimeSubdir = [bundlePath stringByAppendingPathComponent:
+                                       @"madeira-se/libmadeira_se_runtime.dylib"];
+            NSString *qemuCandidate = [qemuDir stringByAppendingPathComponent:
+                                       [NSString stringWithFormat:@"libqemu-%s-softmmu.dylib", guest_arch]];
+            const char *runtimeOverride = getenv("MADEIRA_SE_RUNTIME_LIBRARY");
+            const char *qemuOverride = getenv("MADEIRA_SE_QEMU_LIBRARY");
+
+            setenv("MADEIRA_SE_GUEST_ARCH", guest_arch, 1);
+            setenv("MADEIRA_SE_GUEST_BUILD_DIR", guestDir.fileSystemRepresentation, 1);
+            setenv("WINEARCH", "wow64", 1);
+
+            if (!runtimeOverride || !*runtimeOverride) {
+                NSString *runtime = [[NSFileManager defaultManager] fileExistsAtPath:runtimeCandidate]
+                    ? runtimeCandidate : runtimeSubdir;
+                if ([[NSFileManager defaultManager] fileExistsAtPath:runtime])
+                    setenv("MADEIRA_SE_RUNTIME_LIBRARY", runtime.fileSystemRepresentation, 1);
+                else
+                    unsetenv("MADEIRA_SE_RUNTIME_LIBRARY");
+            }
+            if (!qemuOverride || !*qemuOverride)
+                setenv("MADEIRA_SE_QEMU_LIBRARY", qemuCandidate.fileSystemRepresentation, 1);
+
+            dprintf(STDERR_FILENO,
+                    "[WineProc] Madeira-SE: guest=%s farm=%s qemu=%s runtime=%s\n",
+                    guest_arch, guestDir.fileSystemRepresentation,
+                    getenv("MADEIRA_SE_QEMU_LIBRARY"),
+                    getenv("MADEIRA_SE_RUNTIME_LIBRARY") ?: "RTLD_DEFAULT");
+            if (![[NSFileManager defaultManager] fileExistsAtPath:guestDir])
+                dprintf(STDERR_FILENO, "[WineProc] Madeira-SE ERROR: missing %s guest PE farm\n",
+                        guestDir.fileSystemRepresentation);
+            if (![[NSFileManager defaultManager] fileExistsAtPath:qemuCandidate] &&
+                (!qemuOverride || !*qemuOverride))
+                dprintf(STDERR_FILENO, "[WineProc] Madeira-SE ERROR: missing QEMU TCTI backend %s\n",
+                        qemuCandidate.fileSystemRepresentation);
+        }
 
         // Ensure Wine prefix has system32 directory with DLLs from bundle
         {
@@ -1595,7 +1660,8 @@ static void *wine_process_thread(void *arg) {
          * this process's guest window before its first TEB, and hand FEX's
          * WOW64 module the host features it cannot query itself. */
         ios_main_image_i386 = is_i386_target ? 1 : 0;
-        madeira_publish_host_probe();   /* both FEX modules read it (A12/A13: FlagM, FlagM2) */
+        if (!madeira_cpu_backend_is_tcti())
+            madeira_publish_host_probe();   /* legacy FEX host feature probe */
 
         if (setjmp(wine_ios_exit_jmpbuf) == 0) {
             __wine_main(argc, argv);
@@ -1643,6 +1709,9 @@ static void *wine_process_thread(void *arg) {
          * run gets its own from its game, or madeira.cfg's. */
         unsetenv("MADEIRA_FASTSYNC"); unsetenv("MADEIRA_FASTSYNC_SEM");
         unsetenv("MADEIRA_CPU_COUNT"); unsetenv("DXMT_D9_ANISO_LIMIT");
+        unsetenv("MADEIRA_SE_NO_JIT");
+        unsetenv("MADEIRA_SE_GUEST_ARCH"); unsetenv("MADEIRA_SE_GUEST_BUILD_DIR");
+        unsetenv("MADEIRA_SE_QEMU_LIBRARY"); unsetenv("MADEIRA_SE_RUNTIME_LIBRARY");
         unsetenv("FEX_X87REDUCEDPRECISION");   /* ml1184 */
         unsetenv("MADEIRA_DINPUT_PAD");        /* ml1240 */
         unsetenv("MADEIRA_FEX_AVX"); unsetenv("MADEIRA_FRAMEGEN");   /* ml1184 */

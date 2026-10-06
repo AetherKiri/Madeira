@@ -59,21 +59,17 @@
 		A1000077 /* MadeiraConfig.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000077 /* MadeiraConfig.swift */; };
 		A1000004 /* JITAllocator.c in Sources */ = {isa = PBXBuildFile; fileRef = A2000004 /* JITAllocator.c */; };
 		A1000005 /* EntitlementChecker.swift in Sources */ = {isa = PBXBuildFile; fileRef = A200000A /* EntitlementChecker.swift */; };
-		A1000006 /* FEXBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = A200000B /* FEXBridge.mm */; };
-		A1000010 /* libFEXCore.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000010 /* libFEXCore.a */; };
-		A1000011 /* libFEXCore_Base.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000011 /* libFEXCore_Base.a */; };
-		A1000012 /* libfmt.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000012 /* libfmt.a */; };
-		A1000013 /* libcephes_128bit.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000013 /* libcephes_128bit.a */; };
-		A1000014 /* libxxhash.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000014 /* libxxhash.a */; };
-		A1000015 /* libsoftfloat_3e.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000015 /* libsoftfloat_3e.a */; };
+		A1000007 /* FEXBridgeNoJIT.c in Sources */ = {isa = PBXBuildFile; fileRef = A200000D /* FEXBridgeNoJIT.c */; };
 		A1000016 /* libc++.tbd in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000016 /* libc++.tbd */; };
-		A1000017 /* libJemallocLibs.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000017 /* libJemallocLibs.a */; };
 		A1000020 /* WineServerBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A200001E /* WineServerBridge.m */; };
 		A1000021 /* libwineserver.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000020 /* libwineserver.a */; };
 		A1000022 /* nls in Resources */ = {isa = PBXBuildFile; fileRef = A2000021 /* nls */; };
 		A1000030 /* WineProcessBridge.m in Sources */ = {isa = PBXBuildFile; fileRef = A2000030 /* WineProcessBridge.m */; };
 		A1000031 /* libntdll_unix.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000032 /* libntdll_unix.a */; };
+		A1000036 /* libmadeira_se_runtime.a in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000037 /* libmadeira_se_runtime.a */; };
 		A1000032 /* aarch64-windows in Resources */ = {isa = PBXBuildFile; fileRef = A2000033 /* aarch64-windows */; };
+		A1000037 /* x86_64-windows in Resources */ = {isa = PBXBuildFile; fileRef = A2000038 /* x86_64-windows */; };
+		A1000038 /* qemu in Resources */ = {isa = PBXBuildFile; fileRef = A2000039 /* qemu */; };
 		A1000033 /* wine_stubs.c in Sources */ = {isa = PBXBuildFile; fileRef = A2000034 /* wine_stubs.c */; };
 		A1000034 /* IOKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A2000035 /* IOKit.framework */; };
 		A1000035 /* StikJITHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2000036 /* StikJITHelper.swift */; };
@@ -234,14 +230,8 @@
 		A200000A /* EntitlementChecker.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EntitlementChecker.swift; sourceTree = "<group>"; };
 		A200000B /* FEXBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = FEXBridge.mm; sourceTree = "<group>"; };
 		A200000C /* FEXBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = FEXBridge.h; sourceTree = "<group>"; };
-		A2000010 /* libFEXCore.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libFEXCore.a; path = "../../FEX/build-ios/FEXCore/Source/libFEXCore.a"; sourceTree = "<group>"; };
-		A2000011 /* libFEXCore_Base.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libFEXCore_Base.a; path = "../../FEX/build-ios/FEXCore/Source/libFEXCore_Base.a"; sourceTree = "<group>"; };
-		A2000012 /* libfmt.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libfmt.a; path = "../../FEX/build-ios/External/fmt/libfmt.a"; sourceTree = "<group>"; };
-		A2000013 /* libcephes_128bit.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libcephes_128bit.a; path = "../../FEX/build-ios/External/cephes/libcephes_128bit.a"; sourceTree = "<group>"; };
-		A2000014 /* libxxhash.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libxxhash.a; path = "../../FEX/build-ios/External/xxhash/cmake_unofficial/libxxhash.a"; sourceTree = "<group>"; };
-		A2000015 /* libsoftfloat_3e.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libsoftfloat_3e.a; path = "../../FEX/build-ios/External/SoftFloat-3e/libsoftfloat_3e.a"; sourceTree = "<group>"; };
+		A200000D /* FEXBridgeNoJIT.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = FEXBridgeNoJIT.c; sourceTree = "<group>"; };
 		A2000016 /* libc++.tbd */ = {isa = PBXFileReference; lastKnownFileType = "sourcecode.text-based-dylib-definition"; name = "libc++.tbd"; path = "usr/lib/libc++.tbd"; sourceTree = SDKROOT; };
-		A2000017 /* libJemallocLibs.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; name = libJemallocLibs.a; path = "../../FEX/build-ios/FEXCore/Source/libJemallocLibs.a"; sourceTree = "<group>"; };
 		A200001E /* WineServerBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WineServerBridge.m; sourceTree = "<group>"; };
 		A200001F /* WineServerBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WineServerBridge.h; sourceTree = "<group>"; };
 		A2000020 /* libwineserver.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libwineserver.a; sourceTree = "<group>"; };
@@ -249,7 +239,10 @@
 		A2000030 /* WineProcessBridge.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = WineProcessBridge.m; sourceTree = "<group>"; };
 		A2000031 /* WineProcessBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = WineProcessBridge.h; sourceTree = "<group>"; };
 		A2000032 /* libntdll_unix.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libntdll_unix.a; sourceTree = "<group>"; };
+		A2000037 /* libmadeira_se_runtime.a */ = {isa = PBXFileReference; lastKnownFileType = archive.ar; path = libmadeira_se_runtime.a; sourceTree = "<group>"; };
 		A2000033 /* aarch64-windows */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "aarch64-windows"; sourceTree = "<group>"; };
+		A2000038 /* x86_64-windows */ = {isa = PBXFileReference; lastKnownFileType = folder; path = "x86_64-windows"; sourceTree = "<group>"; };
+		A2000039 /* qemu */ = {isa = PBXFileReference; lastKnownFileType = folder; path = qemu; sourceTree = "<group>"; };
 		A2000034 /* wine_stubs.c */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.c; path = wine_stubs.c; sourceTree = "<group>"; };
 		A2000035 /* IOKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = IOKit.framework; path = System/Library/Frameworks/IOKit.framework; sourceTree = SDKROOT; };
 		A2000036 /* StikJITHelper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StikJITHelper.swift; sourceTree = "<group>"; };
@@ -323,16 +316,10 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A1000010 /* libFEXCore.a in Frameworks */,
-				A1000011 /* libFEXCore_Base.a in Frameworks */,
-				A1000012 /* libfmt.a in Frameworks */,
-				A1000013 /* libcephes_128bit.a in Frameworks */,
-				A1000014 /* libxxhash.a in Frameworks */,
-				A1000015 /* libsoftfloat_3e.a in Frameworks */,
 				A1000016 /* libc++.tbd in Frameworks */,
-				A1000017 /* libJemallocLibs.a in Frameworks */,
 				A1000021 /* libwineserver.a in Frameworks */,
 				A1000031 /* libntdll_unix.a in Frameworks */,
+				A1000036 /* libmadeira_se_runtime.a in Frameworks */,
 				A1000034 /* IOKit.framework in Frameworks */,
 				A1000042 /* libz.tbd in Frameworks */,
 				A1000051 /* libdxmt_combined.a in Frameworks */,
@@ -453,6 +440,7 @@
 				A2000005 /* JITAllocator.h */,
 				A200000B /* FEXBridge.mm */,
 				A200000C /* FEXBridge.h */,
+				A200000D /* FEXBridgeNoJIT.c */,
 				A200001E /* WineServerBridge.m */,
 				A200001F /* WineServerBridge.h */,
 				A2000030 /* WineProcessBridge.m */,
@@ -469,6 +457,8 @@
 				B2000051 /* Madeira JIT.shortcut */,
 				A2000021 /* nls */,
 				A2000033 /* aarch64-windows */,
+				A2000038 /* x86_64-windows */,
+				A2000039 /* qemu */,
 				A20000F1 /* legal */,
 				A2000080 /* arm64ec-windows */,
 				A2000210 /* i386-windows */,
@@ -505,16 +495,10 @@
 		A4000004 /* Libraries */ = {
 			isa = PBXGroup;
 			children = (
-				A2000010 /* libFEXCore.a */,
-				A2000011 /* libFEXCore_Base.a */,
-				A2000012 /* libfmt.a */,
-				A2000013 /* libcephes_128bit.a */,
-				A2000014 /* libxxhash.a */,
-				A2000015 /* libsoftfloat_3e.a */,
 				A2000016 /* libc++.tbd */,
-				A2000017 /* libJemallocLibs.a */,
 				A2000020 /* libwineserver.a */,
 				A2000032 /* libntdll_unix.a */,
+				A2000037 /* libmadeira_se_runtime.a */,
 				A2000035 /* IOKit.framework */,
 				A2000042 /* libz.tbd */,
 				A2000051 /* libdxmt_combined.a */,
@@ -539,7 +523,6 @@
 				A2000307 /* libswresample.a */,
 				A2000308 /* libavutil.a */,
 				B2000010 /* ExtensionFoundation.framework */,
-				B2000030 /* StikJIT.xcframework */,
 			);
 			name = Libraries;
 			sourceTree = "<group>";
@@ -563,14 +546,11 @@
 				A3000002 /* Sources */,
 				A3000001 /* Frameworks */,
 				A3000003 /* Resources */,
-				B3000003 /* Embed JIT Helper */,
-				B3000007 /* Embed StikJIT */,
 				A30000D1 /* Sign bundled dylibs */,
 			);
 			buildRules = (
 			);
 			dependencies = (
-				B3000006 /* PBXTargetDependency */,
 			);
 			name = Madeira;
 			productName = Madeira;
@@ -640,6 +620,8 @@
 			files = (
 				A1000022 /* nls in Resources */,
 				A1000032 /* aarch64-windows in Resources */,
+				A1000037 /* x86_64-windows in Resources */,
+				A1000038 /* qemu in Resources */,
 				A10000F1 /* legal in Resources */,
 				A1000080 /* arm64ec-windows in Resources */,
 				A1000210 /* i386-windows in Resources */,
@@ -757,7 +739,7 @@
 				A1000401 /* GuestDisplay.swift in Sources */,
 				A1000004 /* JITAllocator.c in Sources */,
 				A1000005 /* EntitlementChecker.swift in Sources */,
-				A1000006 /* FEXBridge.mm in Sources */,
+				A1000007 /* FEXBridgeNoJIT.c in Sources */,
 				A1000020 /* WineServerBridge.m in Sources */,
 				A1000030 /* WineProcessBridge.m in Sources */,
 				A1000033 /* wine_stubs.c in Sources */,
@@ -869,16 +851,6 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../FEX/FEXCore/include",
-					"$(SRCROOT)/../FEX/FEXHeaderUtils",
-					"$(SRCROOT)/../FEX/CodeEmitter",
-					"$(SRCROOT)/../FEX/External/fmt/include",
-					"$(SRCROOT)/../FEX/External/range-v3/include",
-					"$(SRCROOT)/../FEX/External/unordered_dense/include",
-					"$(SRCROOT)/../FEX/build-ios",
-					"$(SRCROOT)/../FEX/build-ios/include",
-					"$(SRCROOT)/../FEX/build-ios/FEXCore/Source",
-					"$(SRCROOT)/../FEX",
 				);
 				INFOPLIST_FILE = Madeira/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -889,14 +861,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../FEX/build-ios/FEXCore/Source",
-					"$(SRCROOT)/../FEX/build-ios/External/fmt",
-					"$(SRCROOT)/../FEX/build-ios/External/cephes",
-					"$(SRCROOT)/../FEX/build-ios/External/xxhash/cmake_unofficial",
-					"$(SRCROOT)/../FEX/build-ios/External/SoftFloat-3e",
 					"$(SRCROOT)/Madeira",
 				);
 				MARKETING_VERSION = 0.1.3;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(SRCROOT)/Madeira/libmadeira_se_runtime.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MADEIRA_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -920,16 +892,6 @@
 				GENERATE_INFOPLIST_FILE = NO;
 				HEADER_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../FEX/FEXCore/include",
-					"$(SRCROOT)/../FEX/FEXHeaderUtils",
-					"$(SRCROOT)/../FEX/CodeEmitter",
-					"$(SRCROOT)/../FEX/External/fmt/include",
-					"$(SRCROOT)/../FEX/External/range-v3/include",
-					"$(SRCROOT)/../FEX/External/unordered_dense/include",
-					"$(SRCROOT)/../FEX/build-ios",
-					"$(SRCROOT)/../FEX/build-ios/include",
-					"$(SRCROOT)/../FEX/build-ios/FEXCore/Source",
-					"$(SRCROOT)/../FEX",
 				);
 				INFOPLIST_FILE = Madeira/Info.plist;
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -940,14 +902,14 @@
 				);
 				LIBRARY_SEARCH_PATHS = (
 					"$(inherited)",
-					"$(SRCROOT)/../FEX/build-ios/FEXCore/Source",
-					"$(SRCROOT)/../FEX/build-ios/External/fmt",
-					"$(SRCROOT)/../FEX/build-ios/External/cephes",
-					"$(SRCROOT)/../FEX/build-ios/External/xxhash/cmake_unofficial",
-					"$(SRCROOT)/../FEX/build-ios/External/SoftFloat-3e",
 					"$(SRCROOT)/Madeira",
 				);
 				MARKETING_VERSION = 0.1.3;
+				OTHER_LDFLAGS = (
+					"$(inherited)",
+					"-force_load",
+					"$(SRCROOT)/Madeira/libmadeira_se_runtime.a",
+				);
 				PRODUCT_BUNDLE_IDENTIFIER = "$(MADEIRA_BUNDLE_IDENTIFIER)";
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";

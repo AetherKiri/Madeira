@@ -22,7 +22,36 @@ remediation; steps marked UNVERIFIED have not yet been re-run from scratch.
 | `toolchains/llvm-project/` + `toolchains/llvm-ios-build/` + `toolchains/llvm-host-build/` | LLVM built for iOS (hours) | upstream llvm-project at commit `8dfdcc7b7` ("[libc++] Fix memory leaks when throwing inside std::vector constructor"); configure `llvm-ios-build` with `-DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_SYSROOT=iphoneos -DCMAKE_BUILD_TYPE=Release -DLLVM_HOST_TRIPLE=arm64-apple-ios17.0 -DLLVM_DEFAULT_TARGET_TRIPLE=arm64-apple-ios17.0 -DLLVM_TARGET_ARCH=host -DLLVM_TARGETS_TO_BUILD= -DLLVM_ENABLE_PROJECTS= -DLLVM_BUILD_TOOLS=Off -DLLVM_INCLUDE_TESTS=Off -DLLVM_ENABLE_ZLIB=Off` (values read back from the existing CMakeCache); a host build for tablegen lives in `llvm-host-build` | recipe reconstructed; UNVERIFIED |
 | `research/GPTK/Metal Shader Converter 4.0 beta 2.pkg` | Apple installer, 30 MB, licence-bound | Apple developer downloads; SHA-256 `1acc33c87ea663933df89721a998d066106685473020bcbe007cee7a16155734` (pinned in `build/madeira-d3d12/deps.sh`). Only needed to REBUILD the converter fetch; the library itself is tracked | n/a |
 | `app/Madeira/x86_64-vcruntime/` | Microsoft Visual C++ 2015-2022 x64 runtime DLLs (concrt140, msvcp140*, vcamp140, vccorlib140, vcruntime140*), redistributable under Microsoft's terms, not under this repository's licence | extract from Microsoft's `vc_redist.x64.exe` (or copy from `C:\Windows\System32` of a licensed Windows install) into that folder | UNVERIFIED |
-| A free Apple ID; StikDebug or a pairing file plus LocalDevVPN | signing and JIT runtime requirements | see `docs/JIT.md` | n/a |
+| A free Apple ID; StikDebug or a pairing file plus LocalDevVPN | signing and legacy FEX/JIT runtime requirements | see `docs/JIT.md`; the Madeira-SE no-JIT profile does not require these inputs | n/a |
+
+## Madeira-SE App Store profile (no JIT)
+
+The App Store profile replaces the old FEX execution path with the pinned QEMU
+x86 TCG translator and its AArch64 TCTI backend. QEMU uses signed,
+precompiled AArch64 gadgets and a read/write data buffer; it never allocates a
+runtime executable translation page. The profile launches PE32 and PE32+
+programs directly through the split Wine host/guest tree, so a Wine desktop is
+optional and is not part of the normal visual-novel path.
+
+Build the target-specific pieces in this order:
+
+1. `scripts/build-madeira-se-runtime.sh` builds the no-JIT Wine CPU transport
+   for the selected Apple SDK. With `MADEIRA_SE_SDK=iphoneos`, the script also
+   stages `app/Madeira/libmadeira_se_runtime.a`.
+2. `scripts/build-madeira-se-qemu-ios.sh` verifies the pinned GLib source,
+   configures QEMU for `iphoneos/arm64`, builds both the i386 and x86-64 TCTI
+   libraries, runs the target smoke checks, and stages them under
+   `app/Madeira/qemu/`.
+3. `scripts/configure-wine-madeira-se.sh` and
+   `scripts/build-wine-madeira-se-bootstrap.sh` produce the ARM64 Mach-O Wine
+   host and the i386/x86-64 PE farms. Stage the farms with
+   `scripts/stage-madeira-se-guest-farms.sh`.
+4. Build the app with Xcode. The `Madeira` target links the static runtime and
+   the QEMU resources; it has no FEX archives, StikJIT framework, JIT helper
+   dependency, or JIT entitlement.
+
+The generated farms and QEMU dylibs remain ignored because they are tied to
+the selected SDK and must be rebuilt for each distributable archive.
 
 ## Native build chains (all in the repository)
 
@@ -44,7 +73,7 @@ git-ignored and consumed by the app project.
    AudioToolbox and CoreFoundation). The configure arguments are the ones the
    port was built and device-tested with on the WSL toolchain; the macOS form
    of the script is UNVERIFIED.
-2. FEX (submodule, branch ios-port-2607):
+2. FEX (legacy profile only; not used by Madeira-SE):
    - `FEX/build-ios`: `build/fex-ios/build.sh` (same options as the development CMakeCache) -> `FEX/build-ios/FEXCore/Source/lib{FEXCore,FEXCore_Base,JemallocLibs}.a` and the `External/{cephes,fmt,SoftFloat-3e,xxhash}` archives. UNVERIFIED from clean.
    - `FEX/build-arm64ec`: `build/fex-arm64ec/build.sh` (configures with `FEX/Data/CMake/toolchain_mingw.cmake` and the recorded options on first run, builds target `arm64ecfex`, copies `Bin/libarm64ecfex.dll` to `app/Madeira/arm64ec-windows/xtajit64.dll`). The build step was verified this session; the first-run configure in the script is reconstructed from CMakeCache and UNVERIFIED.
 3. Wine (submodule, branch madeira-lgpl):
@@ -63,7 +92,7 @@ git-ignored and consumed by the app project.
    in that folder runs its host tests. Verified on the development machine.
 5. Native D3D12 runtime: `build/madeira-d3d12/build-pe.sh` -> `d3d12.dll`, `madeira_d3d12.dll` and the test executables in `app/Madeira/arm64ec-windows/` (tracked). Verified this session. `build/madeira-d3d12/fetch-converter.sh` re-verifies the converter library; `build/stage-licenses.sh` refreshes the bundled licence copies (the Xcode build fails if they are stale).
 6. App: `xcodebuild -project app/Madeira.xcodeproj -scheme Madeira -destination 'generic/platform=iOS' -allowProvisioningUpdates build` (Debug is the configuration that runs the games; Release builds have crashed the guest), then zip `Payload/Madeira.app` into an IPA and sideload. Verified this session on the development machine.
-7. WoW64 (32-bit programs, optional): `build/wine-i386/build.sh` (i386 Wine farm
+7. Legacy FEX WoW64 (32-bit programs, optional): `build/wine-i386/build.sh` (i386 Wine farm
    -> `app/Madeira/i386-windows/`), `build/fex-wow64/build.sh` (FEX WOW64 module
    -> `app/Madeira/aarch64-windows/xtajit.dll`) and the aarch64 `wow64.dll` /
    `wow64win.dll`; see docs/WOW64.md, "Building". UNVERIFIED on macOS.

@@ -158,6 +158,32 @@ madeira-d3d12/tests/offline/sm51/
 app/Madeira/i386-windows/*
 !app/Madeira/i386-windows/.gitkeep
 
+# Madeira-SE guest farm and QEMU TCTI dylibs are generated from the pinned
+# Wine/QEMU builds.  They are staged locally for an app smoke run, but must be
+# rebuilt for each target SDK before they are shipped in an App Store archive.
+app/Madeira/x86_64-windows/*
+!app/Madeira/x86_64-windows/.gitkeep
+app/Madeira/qemu/*
+!app/Madeira/qemu/.gitkeep
+app/Madeira/libmadeira_se_runtime.a
+
+# Madeira-SE third-party target build directories (recreated by scripts).
+.deps/
+build/madeira-se-glib-ios/
+build/madeira-se-glib-ios-prefix/
+build/madeira-se-glib-ios-*/
+build/madeira-se-*/
+build/madeira-se-*.ini
+build/madeira-se-*.log
+build/madeira-se-*.log.*
+build/fps-*/
+build/dxmt-ios/obj-maccatalyst/
+build/gnutls-ios/obj-maccatalyst/
+build/freetype-ios/build-maccatalyst/
+build/ntdll-unix/obj-maccatalyst/
+build/wineserver/obj-maccatalyst/
+build/win32u-unix/obj-maccatalyst/
+
 # Madeira Dock: built from madeira-dock by build/madeira-dock/build.sh
 app/Madeira/arm64ec-windows/dockhost.exe
 app/Madeira/arm64ec-windows/dock-notices.txt

@@ -214,7 +214,12 @@ ar rcs "$OBJ_DIR/libntdll_unix.a" \
     "$OBJ_DIR/dwrite_unixlib.o" "$OBJ_DIR/dnsapi_unixlib.o" \
     "$OBJ_DIR/winegstreamer_unixlib.o" "$OBJ_DIR/wg_parser_apple_ios.o" \
     "$OBJ_DIR/cdrom.o" "$OBJ_DIR/debug.o" "$OBJ_DIR/env.o" "$OBJ_DIR/file.o" \
-    "$OBJ_DIR/loader.o" "$OBJ_DIR/loadorder.o" "$OBJ_DIR/process.o" "$OBJ_DIR/registry.o" \
+    "$OBJ_DIR/loader.o" "$OBJ_DIR/loadorder.o" "$OBJ_DIR/madeira_cpu.o" \
+    "$OBJ_DIR/madeira_wow64_file.o" "$OBJ_DIR/madeira_wow64_process.o" \
+    "$OBJ_DIR/madeira_wow64_registry.o" "$OBJ_DIR/madeira_wow64_security.o" \
+    "$OBJ_DIR/madeira_wow64_shims.o" "$OBJ_DIR/madeira_wow64_sync.o" \
+    "$OBJ_DIR/madeira_wow64_syscall.o" "$OBJ_DIR/madeira_wow64_system.o" \
+    "$OBJ_DIR/madeira_wow64_virtual.o" "$OBJ_DIR/process.o" "$OBJ_DIR/registry.o" \
     "$OBJ_DIR/security.o" "$OBJ_DIR/serial.o" "$OBJ_DIR/server.o" \
     "$OBJ_DIR/signal_arm.o" "$OBJ_DIR/signal_arm64.o" "$OBJ_DIR/signal_i386.o" "$OBJ_DIR/signal_x86_64.o" \
     "$OBJ_DIR/socket.o" "$OBJ_DIR/sync.o" "$OBJ_DIR/syscall.o" "$OBJ_DIR/system.o" \
