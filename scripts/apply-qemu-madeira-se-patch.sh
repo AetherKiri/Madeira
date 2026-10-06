@@ -106,6 +106,12 @@ for patch_file in "${patches[@]}"; do
             && grep -q "needs_exe_wrapper = true" "$QEMU_SOURCE/configure" \
             && grep -q "native_cc_args" "$QEMU_SOURCE/configure"; then
         echo "Madeira-SE Apple cross native-SDK patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0012-madeira-se-context-race.patch" ]] \
+            && grep -q "backend_run() computes the fast-path flag" \
+                "$QEMU_SOURCE/system/madeira-se.c" \
+            && grep -q "pthread_equal(madeira_se_context_thread, run->caller_thread)" \
+                "$QEMU_SOURCE/system/madeira-se.c"; then
+        echo "Madeira-SE TCTI context-race patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

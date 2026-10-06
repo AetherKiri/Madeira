@@ -1,0 +1,22 @@
+--- a/system/madeira-se.c
++++ b/system/madeira-se.c
+@@ -581,7 +581,18 @@
+     unsigned int slice;
+     int cpu_result;
+     bool interrupted = false;
+-    bool reuse_context = run->reuse_context;
++    /*
++     * backend_run() computes the fast-path flag before queueing this
++     * callback on QEMU's shared CPU.  Another Wine thread may run first and
++     * replace the resident context while this callback is waiting.  Recheck
++     * the owner here, at the point where the CPU state is actually touched;
++     * otherwise this thread would execute with the other thread's ESP/EIP.
++     */
++    bool reuse_context =
++        run->reuse_context &&
++        madeira_se_context_instance == instance &&
++        madeira_se_context_thread_valid &&
++        pthread_equal(madeira_se_context_thread, run->caller_thread);
+ 
+     if (qatomic_xchg(&instance->interrupted, false)) {
+         madeira_se_context_instance = NULL;
