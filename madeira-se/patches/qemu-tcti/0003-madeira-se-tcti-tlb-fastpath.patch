@@ -1,0 +1,72 @@
+diff --git a/tcg/aarch64-tcti/tcg-target.c.inc b/tcg/aarch64-tcti/tcg-target.c.inc
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -371,2 +371,22 @@
+             break;\
++        case -224: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off224_i64 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off224_i64; \
++            break; \
++        case -240: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off240_i64 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off240_i64; \
++            break; \
++        case -256: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off256_i64 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off256_i64; \
++            break; \
++        case -272: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off272_i64 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off272_i64; \
++            break; \
+         default: \
+@@ -1276,2 +1296,6 @@
+             case -128: LD_MEMOP_HANDLER(gadget, args[2], off128_i32, a_bits, s_bits); break;
++            case -224: LD_MEMOP_HANDLER(gadget, args[2], off224_i32, a_bits, s_bits); break;
++            case -240: LD_MEMOP_HANDLER(gadget, args[2], off240_i32, a_bits, s_bits); break;
++            case -256: LD_MEMOP_HANDLER(gadget, args[2], off256_i32, a_bits, s_bits); break;
++            case -272: LD_MEMOP_HANDLER(gadget, args[2], off272_i32, a_bits, s_bits); break;
+             default:   LD_MEMOP_LOOKUP(gadget, args[2], slowpath_off0_i32); break;
+@@ -1314,2 +1338,6 @@
+                 case -128: LD_MEMOP_HANDLER(gadget, args[2], off128_i64, a_bits, s_bits); break;
++                case -224: LD_MEMOP_HANDLER(gadget, args[2], off224_i64, a_bits, s_bits); break;
++                case -240: LD_MEMOP_HANDLER(gadget, args[2], off240_i64, a_bits, s_bits); break;
++                case -256: LD_MEMOP_HANDLER(gadget, args[2], off256_i64, a_bits, s_bits); break;
++                case -272: LD_MEMOP_HANDLER(gadget, args[2], off272_i64, a_bits, s_bits); break;
+                 default:   LD_MEMOP_LOOKUP(gadget, args[2], slowpath_off0_i64); break;
+@@ -1340,2 +1368,6 @@
+             case -128: ST_MEMOP_HANDLER(gadget, args[2], off128_i32, a_bits, s_bits); break;
++            case -224: ST_MEMOP_HANDLER(gadget, args[2], off224_i32, a_bits, s_bits); break;
++            case -240: ST_MEMOP_HANDLER(gadget, args[2], off240_i32, a_bits, s_bits); break;
++            case -256: ST_MEMOP_HANDLER(gadget, args[2], off256_i32, a_bits, s_bits); break;
++            case -272: ST_MEMOP_HANDLER(gadget, args[2], off272_i32, a_bits, s_bits); break;
+             default:   ST_MEMOP_LOOKUP(gadget, args[2], slowpath_off0_i32); break;
+@@ -1379,2 +1411,6 @@
+                 case -128: ST_MEMOP_HANDLER(gadget, args[2], off128_i64, a_bits, s_bits); break;
++                case -224: ST_MEMOP_HANDLER(gadget, args[2], off224_i64, a_bits, s_bits); break;
++                case -240: ST_MEMOP_HANDLER(gadget, args[2], off240_i64, a_bits, s_bits); break;
++                case -256: ST_MEMOP_HANDLER(gadget, args[2], off256_i64, a_bits, s_bits); break;
++                case -272: ST_MEMOP_HANDLER(gadget, args[2], off272_i64, a_bits, s_bits); break;
+                 default:   ST_MEMOP_LOOKUP(gadget, args[2], slowpath_off0_i64); break;
+diff --git a/tcg/aarch64-tcti/tcti-gadget-gen.py b/tcg/aarch64-tcti/tcti-gadget-gen.py
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -30,7 +30,7 @@
+ # We'll create a variety of gadgets that assume the MMU's TLB is stored at certain
+ # offsets into its structure. These should match the offsets in tcg-target.c.in.
+-QEMU_ALLOWED_MMU_OFFSETS = [ 32, 48, 64, 96, 128 ]
++QEMU_ALLOWED_MMU_OFFSETS = [ 32, 48, 64, 96, 128, 224, 240, 256, 272 ]
+-
++
+ # Statistics.
+ gadgets      = 0
+ instructions = 0
+@@ -411,1 +411,4 @@
++        # Current QEMU can leave a TLB table unallocated until the first
++        # slow-path fill. Avoid dereferencing a null table on the fast path.
++        *(('cbz x27, 0f',) if offset >= 224 else ()),
+         "add x27, x27, x26",

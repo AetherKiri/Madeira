@@ -1,0 +1,27 @@
+diff --git a/tcg/aarch64-tcti/tcg-target.c.inc b/tcg/aarch64-tcti/tcg-target.c.inc
+index d43e8b0..31404e5 100644
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -1443,6 +1443,10 @@ static void tcg_out_op(TCGContext *s, TCGOpcode opc, TCGType type,
+             LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], st_leuw, mode5013)
+             tcg_out_binary_gadget(s, gadget, args[0], args[1]);
+             break;
++        } else if (args[2] == 0x5e03) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], st_ub, mode5e03)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
+         }
+ 
+         switch(tlb_mask_table_ofs(s, get_mmuidx(args[2]))) {
+diff --git a/tcg/aarch64-tcti/tcti-gadget-gen.py b/tcg/aarch64-tcti/tcti-gadget-gen.py
+index 08c5907..c01a26e 100755
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -1090,6 +1090,7 @@ def vector_math_dn_immediate(name, operation, immediate_range, filter=lambda x:
+     for mode, suffix, helper, fastpath in (
+         (0x5023, "leul", "helper_stl_mmu", "str Wd, [Xn, x27]"),
+         (0x5013, "leuw", "helper_stw_mmu", "strh Wd, [Xn, x27]"),
++        (0x5e03, "ub",   "helper_stb_mmu",  "strb Wd, [Xn, x27]"),
+     ):
+         st_thunk(
+             f"qemu_st_{suffix}_{subtype}_mode{mode:04x}",

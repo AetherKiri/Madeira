@@ -1,0 +1,325 @@
+diff --git a/include/system/madeira-se-tcti-perf.h b/include/system/madeira-se-tcti-perf.h
+--- a/include/system/madeira-se-tcti-perf.h
++++ b/include/system/madeira-se-tcti-perf.h
+@@ -47,4 +47,9 @@
+                                            const char *second_name);
+ void madeira_se_tcti_perf_dump_opcode_pairs(void);
+ 
++/* Optional static qemu_ld/qemu_st MemOpIdx profile. */
++void madeira_se_tcti_perf_note_memop(bool is_store, bool is_i64,
++                                     uint32_t memop_idx);
++void madeira_se_tcti_perf_dump_memops(void);
++
+ #endif /* SYSTEM_MADEIRA_SE_TCTI_PERF_H */
+diff --git a/system/madeira-se-tcti-perf.c b/system/madeira-se-tcti-perf.c
+--- a/system/madeira-se-tcti-perf.c
++++ b/system/madeira-se-tcti-perf.c
+@@ -17,11 +17,21 @@
+ 
+ #define MADEIRA_SE_TCTI_OP_PROFILE_LIMIT 256u
+ #define MADEIRA_SE_TCTI_TOP_PAIRS 32u
++#define MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS 256u
++#define MADEIRA_SE_TCTI_TOP_MEMOPS 32u
+ 
+ static uint64_t opcode_pair_counts[MADEIRA_SE_TCTI_OP_PROFILE_LIMIT]
+     [MADEIRA_SE_TCTI_OP_PROFILE_LIMIT];
+ static const char *opcode_names[MADEIRA_SE_TCTI_OP_PROFILE_LIMIT];
+ static bool opcode_pairs_dumped;
++typedef struct MadeiraSeTctiMemopCount {
++    uint32_t memop_idx;
++    uint64_t count;
++} MadeiraSeTctiMemopCount;
++
++static MadeiraSeTctiMemopCount memop_counts[2][2]
++    [MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS];
++static bool memops_dumped;
+ 
+ bool madeira_se_tcti_perf_enabled(void)
+ {
+@@ -38,6 +48,7 @@
+             && strcasecmp(value, "false") != 0;
+         if (enabled != 0 && !dump_registered) {
+             atexit(madeira_se_tcti_perf_dump_opcode_pairs);
++            atexit(madeira_se_tcti_perf_dump_memops);
+             dump_registered = true;
+         }
+     }
+@@ -50,8 +61,10 @@
+     madeira_se_tcti_perf_state.translated_instructions += guest_instructions;
+     /* The FPS runner terminates long-lived titles after sampling. Emit one
+      * usable profile before that forced termination if enough TBs were seen. */
+-    if (madeira_se_tcti_perf_state.tb_translations == 100000u)
++    if (madeira_se_tcti_perf_state.tb_translations == 100000u) {
+         madeira_se_tcti_perf_dump_opcode_pairs();
++        madeira_se_tcti_perf_dump_memops();
++    }
+ }
+ 
+ void madeira_se_tcti_perf_read(uint64_t *guest_instructions,
+@@ -135,3 +148,79 @@
+                 entry->count);
+     }
+ }
++
++void madeira_se_tcti_perf_note_memop(bool is_store, bool is_i64,
++                                     uint32_t memop_idx)
++{
++    MadeiraSeTctiMemopCount *table =
++        memop_counts[is_store != 0][is_i64 != 0];
++    unsigned int slot = (memop_idx * 2654435761u)
++        % MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS;
++    unsigned int probe;
++
++    for (probe = 0; probe < MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS; ++probe) {
++        MadeiraSeTctiMemopCount *entry = &table[slot];
++
++        if (entry->count == 0 || entry->memop_idx == memop_idx) {
++            entry->memop_idx = memop_idx;
++            entry->count++;
++            return;
++        }
++        slot = (slot + 1) % MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS;
++    }
++}
++
++void madeira_se_tcti_perf_dump_memops(void)
++{
++    struct memop_entry {
++        uint64_t count;
++        uint32_t memop_idx;
++        uint8_t is_store;
++        uint8_t is_i64;
++    };
++    struct memop_entry top[MADEIRA_SE_TCTI_TOP_MEMOPS] = { 0 };
++    unsigned int is_store;
++    unsigned int is_i64;
++    unsigned int bucket;
++
++    if (memops_dumped) return;
++    memops_dumped = true;
++    for (is_store = 0; is_store < 2; ++is_store) {
++        for (is_i64 = 0; is_i64 < 2; ++is_i64) {
++            for (bucket = 0;
++                 bucket < MADEIRA_SE_TCTI_MEMOP_PROFILE_SLOTS;
++                 ++bucket) {
++                const MadeiraSeTctiMemopCount *entry =
++                    &memop_counts[is_store][is_i64][bucket];
++                uint64_t count = entry->count;
++                unsigned int slot;
++
++                if (count == 0
++                    || count <= top[MADEIRA_SE_TCTI_TOP_MEMOPS - 1].count) {
++                    continue;
++                }
++                for (slot = MADEIRA_SE_TCTI_TOP_MEMOPS - 1; slot > 0; --slot) {
++                    if (count <= top[slot - 1].count) break;
++                    top[slot] = top[slot - 1];
++                }
++                top[slot] = (struct memop_entry){
++                    .count = count,
++                    .memop_idx = entry->memop_idx,
++                    .is_store = (uint8_t)is_store,
++                    .is_i64 = (uint8_t)is_i64,
++                };
++            }
++        }
++    }
++    for (unsigned int rank = 0; rank < MADEIRA_SE_TCTI_TOP_MEMOPS; ++rank) {
++        const struct memop_entry *entry = &top[rank];
++
++        if (entry->count == 0) break;
++        fprintf(stderr,
++                "MADEIRA_SE_TCTI_MEMOP rank=%u kind=%s width=%s "
++                "idx=0x%08" PRIx32 " count=%" PRIu64 "\n",
++                rank + 1, entry->is_store ? "st" : "ld",
++                entry->is_i64 ? "i64" : "i32",
++                entry->memop_idx, entry->count);
++    }
++}
+diff --git a/tcg/aarch64-tcti/tcg-target.c.inc b/tcg/aarch64-tcti/tcg-target.c.inc
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -393,6 +393,58 @@
+             break; \
+         }
+ 
++#define LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(arg, name, mode) \
++    switch(tlb_mask_table_ofs(s, get_mmuidx(arg))) { \
++        case -32:  \
++            gadget = (a_bits >= s_bits) ?  \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off32_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off32_i32; \
++            break; \
++        case -48:  \
++            gadget = (a_bits >= s_bits) ?  \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off48_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off48_i32; \
++            break; \
++        case -64: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off64_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off64_i32; \
++            break; \
++        case -96: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off96_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off96_i32; \
++            break; \
++        case -128: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off128_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off128_i32; \
++            break;\
++        case -224: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off224_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off224_i32; \
++            break; \
++        case -240: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off240_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off240_i32; \
++            break; \
++        case -256: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off256_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off256_i32; \
++            break; \
++        case -272: \
++            gadget = (a_bits >= s_bits) ? \
++                gadget_qemu_ ## name ## _aligned_ ## mode ## _off272_i32 : \
++                gadget_qemu_ ## name ## _unaligned_ ## mode ## _off272_i32; \
++            break; \
++        default: \
++            gadget = gadget_qemu_ ## name ## _slowpath_ ## mode ## _off0_i32; \
++            break; \
++        }
++
+ 
+ static bool patch_reloc(tcg_insn_unit *code_ptr, int type,
+                         intptr_t value, intptr_t addend)
+@@ -1281,11 +1333,28 @@
+ 
+     case INDEX_op_qemu_ld_i32:
+     {
++        if (madeira_se_tcti_perf_enabled()) {
++            madeira_se_tcti_perf_note_memop(false, false, args[2]);
++        }
+         MemOp opc = get_memop(args[2]);
+         unsigned a_bits = memop_alignment_bits(opc);
+         unsigned s_bits = opc & MO_SIZE;
+ 
+         void *gadget;
++
++        if (args[2] == 0x5023) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], ld_leul, mode5023)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
++        } else if (args[2] == 0x5013) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], ld_leuw, mode5013)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
++        } else if (args[2] == 0x5e03) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], ld_ub, mode5e03)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
++        }
+ 
+         switch(tlb_mask_table_ofs(s, get_mmuidx(args[2]))) {
+             case -32:  LD_MEMOP_HANDLER(gadget, args[2],  off32_i32, a_bits, s_bits); break;
+@@ -1309,6 +1378,9 @@
+ 
+     case INDEX_op_qemu_ld_i64:
+     {
++        if (madeira_se_tcti_perf_enabled()) {
++            madeira_se_tcti_perf_note_memop(false, true, args[2]);
++        }
+         MemOp opc = get_memop(args[2]);
+         unsigned a_bits = memop_alignment_bits(opc);
+         unsigned s_bits = opc & MO_SIZE;
+@@ -1353,11 +1425,24 @@
+ 
+     case INDEX_op_qemu_st_i32:
+     {
++        if (madeira_se_tcti_perf_enabled()) {
++            madeira_se_tcti_perf_note_memop(true, false, args[2]);
++        }
+         MemOp opc = get_memop(args[2]);
+         unsigned a_bits = memop_alignment_bits(opc);
+         unsigned s_bits = opc & MO_SIZE;
+ 
+         void *gadget;
++
++        if (args[2] == 0x5023) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], st_leul, mode5023)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
++        } else if (args[2] == 0x5013) {
++            LOOKUP_SPECIAL_CASE_LDST_GADGET_I32(args[2], st_leuw, mode5013)
++            tcg_out_binary_gadget(s, gadget, args[0], args[1]);
++            break;
++        }
+ 
+         switch(tlb_mask_table_ofs(s, get_mmuidx(args[2]))) {
+             case -32:  ST_MEMOP_HANDLER(gadget, args[2],  off32_i32, a_bits, s_bits); break;
+@@ -1382,6 +1467,9 @@
+ 
+     case INDEX_op_qemu_st_i64:
+     {
++        if (madeira_se_tcti_perf_enabled()) {
++            madeira_se_tcti_perf_note_memop(true, true, args[2]);
++        }
+         MemOp opc = get_memop(args[2]);
+         unsigned a_bits = memop_alignment_bits(opc);
+         unsigned s_bits = opc & MO_SIZE;
+diff --git a/tcg/aarch64-tcti/tcti-gadget-gen.py b/tcg/aarch64-tcti/tcti-gadget-gen.py
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -1033,6 +1033,21 @@
+         force_slowpath=is_slowpath, immediate=0x3a
+     )
+ 
++    # The i386 visual-novel workload uses these MemOpIdx values for its
++    # hot byte/word/dword accesses.  Keep the operation index out of the
++    # bytecode stream so a TLB hit does not need an x28 increment.
++    for mode, suffix, helper, fastpath in (
++        (0x5023, "leul", "helper_ldul_mmu", "ldr Wd, [Xn, x27]"),
++        (0x5013, "leuw", "helper_lduw_mmu", "ldrh Wd, [Xn, x27]"),
++        (0x5e03, "ub",   "helper_ldub_mmu",  "ldrb Wd, [Xn, x27]"),
++    ):
++        ld_thunk(
++            f"qemu_ld_{suffix}_{subtype}_mode{mode:04x}",
++            is_aligned=is_aligned, slowpath_helper=helper,
++            fastpath_32b=[fastpath], fastpath_64b=[fastpath],
++            force_slowpath=is_slowpath, immediate=mode,
++        )
++
+ 
+ # Handlers for QEMU_ST, which handles guest -> host stores.
+ for subtype in ('aligned', 'unaligned', 'slowpath'):
+@@ -1070,6 +1085,25 @@
+     st_thunk(f"qemu_st_leq_{subtype}_mode3a", is_aligned=is_aligned, slowpath_helper="helper_stq_mmu",
+         fastpath_32b=["str Xd, [Xn, x27]"], fastpath_64b=["str Xd, [Xn, x27]"],
+         force_slowpath=is_slowpath, immediate=0x3a
++    )
++
++    for mode, suffix, helper, fastpath in (
++        (0x5023, "leul", "helper_stl_mmu", "str Wd, [Xn, x27]"),
++        (0x5013, "leuw", "helper_stw_mmu", "strh Wd, [Xn, x27]"),
++    ):
++        st_thunk(
++            f"qemu_st_{suffix}_{subtype}_mode{mode:04x}",
++            is_aligned=is_aligned, slowpath_helper=helper,
++            fastpath_32b=[fastpath], fastpath_64b=[fastpath],
++            force_slowpath=is_slowpath, immediate=mode,
++        )
++
++    st_thunk(
++        f"qemu_st_leq_{subtype}_mode5033",
++        is_aligned=is_aligned, slowpath_helper="helper_stq_mmu",
++        fastpath_32b=["str Xd, [Xn, x27]"],
++        fastpath_64b=["str Xd, [Xn, x27]"],
++        force_slowpath=is_slowpath, immediate=0x5033,
+     )
+ 
+ 

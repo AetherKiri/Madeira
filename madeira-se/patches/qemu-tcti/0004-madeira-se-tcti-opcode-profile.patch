@@ -1,0 +1,163 @@
+diff --git a/include/system/madeira-se-tcti-perf.h b/include/system/madeira-se-tcti-perf.h
+--- a/include/system/madeira-se-tcti-perf.h
++++ b/include/system/madeira-se-tcti-perf.h
+@@ -41,4 +41,10 @@
+                                uint64_t *tb_translations,
+                                uint64_t *translated_instructions);
+ 
++/* Optional static TCG opcode-pair profile used to select fusion candidates. */
++void madeira_se_tcti_perf_note_opcode_pair(uint16_t first, uint16_t second,
++                                           const char *first_name,
++                                           const char *second_name);
++void madeira_se_tcti_perf_dump_opcode_pairs(void);
++
+ #endif /* SYSTEM_MADEIRA_SE_TCTI_PERF_H */
+diff --git a/system/madeira-se-tcti-perf.c b/system/madeira-se-tcti-perf.c
+--- a/system/madeira-se-tcti-perf.c
++++ b/system/madeira-se-tcti-perf.c
+@@ -15,9 +15,18 @@
+ 
+ MadeiraSeTctiPerfState madeira_se_tcti_perf_state;
+ 
++#define MADEIRA_SE_TCTI_OP_PROFILE_LIMIT 256u
++#define MADEIRA_SE_TCTI_TOP_PAIRS 32u
++
++static uint64_t opcode_pair_counts[MADEIRA_SE_TCTI_OP_PROFILE_LIMIT]
++    [MADEIRA_SE_TCTI_OP_PROFILE_LIMIT];
++static const char *opcode_names[MADEIRA_SE_TCTI_OP_PROFILE_LIMIT];
++static bool opcode_pairs_dumped;
++
+ bool madeira_se_tcti_perf_enabled(void)
+ {
+     static int enabled = -1;
++    static bool dump_registered;
+ 
+     if (enabled < 0) {
+         const char *value = getenv("MADEIRA_SE_PERF_STATS");
+@@ -27,6 +36,10 @@
+             && strcasecmp(value, "off") != 0
+             && strcasecmp(value, "no") != 0
+             && strcasecmp(value, "false") != 0;
++        if (enabled != 0 && !dump_registered) {
++            atexit(madeira_se_tcti_perf_dump_opcode_pairs);
++            dump_registered = true;
++        }
+     }
+     return enabled != 0;
+ }
+@@ -35,6 +48,10 @@
+ {
+     madeira_se_tcti_perf_state.tb_translations++;
+     madeira_se_tcti_perf_state.translated_instructions += guest_instructions;
++    /* The FPS runner terminates long-lived titles after sampling. Emit one
++     * usable profile before that forced termination if enough TBs were seen. */
++    if (madeira_se_tcti_perf_state.tb_translations == 100000u)
++        madeira_se_tcti_perf_dump_opcode_pairs();
+ }
+ 
+ void madeira_se_tcti_perf_read(uint64_t *guest_instructions,
+@@ -58,3 +75,63 @@
+         *translated_instructions = qatomic_read(
+             &madeira_se_tcti_perf_state.translated_instructions);
+ }
++
++void madeira_se_tcti_perf_note_opcode_pair(uint16_t first, uint16_t second,
++                                           const char *first_name,
++                                           const char *second_name)
++{
++    if (first >= MADEIRA_SE_TCTI_OP_PROFILE_LIMIT
++        || second >= MADEIRA_SE_TCTI_OP_PROFILE_LIMIT) {
++        return;
++    }
++    opcode_pair_counts[first][second]++;
++    if (first_name != NULL) opcode_names[first] = first_name;
++    if (second_name != NULL) opcode_names[second] = second_name;
++}
++
++void madeira_se_tcti_perf_dump_opcode_pairs(void)
++{
++    struct pair_entry {
++        uint64_t count;
++        uint16_t first;
++        uint16_t second;
++    };
++    struct pair_entry top[MADEIRA_SE_TCTI_TOP_PAIRS] = { 0 };
++    unsigned int first;
++    unsigned int second;
++
++    if (opcode_pairs_dumped) return;
++    opcode_pairs_dumped = true;
++    for (first = 0; first < MADEIRA_SE_TCTI_OP_PROFILE_LIMIT; ++first) {
++        for (second = 0; second < MADEIRA_SE_TCTI_OP_PROFILE_LIMIT; ++second) {
++            uint64_t count = opcode_pair_counts[first][second];
++            unsigned int slot;
++
++            if (count == 0 || count <= top[MADEIRA_SE_TCTI_TOP_PAIRS - 1].count)
++                continue;
++            for (slot = MADEIRA_SE_TCTI_TOP_PAIRS - 1; slot > 0; --slot) {
++                if (count <= top[slot - 1].count) break;
++                top[slot] = top[slot - 1];
++            }
++            top[slot] = (struct pair_entry){
++                .count = count,
++                .first = (uint16_t)first,
++                .second = (uint16_t)second,
++            };
++        }
++    }
++    for (unsigned int rank = 0; rank < MADEIRA_SE_TCTI_TOP_PAIRS; ++rank) {
++        const struct pair_entry *entry = &top[rank];
++
++        if (entry->count == 0) break;
++        fprintf(stderr,
++                "MADEIRA_SE_TCTI_OP_PAIR rank=%u first=%s second=%s "
++                "count=%" PRIu64 "\n",
++                rank + 1,
++                opcode_names[entry->first] != NULL
++                    ? opcode_names[entry->first] : "unknown",
++                opcode_names[entry->second] != NULL
++                    ? opcode_names[entry->second] : "unknown",
++                entry->count);
++    }
++}
+diff --git a/tcg/aarch64-tcti/tcg-target.c.inc b/tcg/aarch64-tcti/tcg-target.c.inc
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -2162,6 +2162,29 @@
+     // No prologue; as we're interpreted.
+ }
+ 
++static void madeira_se_tcti_perf_note_opcode_pairs(TCGContext *s)
++{
++    const TCGOp *op;
++    TCGOpcode previous = NB_OPS;
++
++    QTAILQ_FOREACH(op, &s->ops, link) {
++        switch (op->opc) {
++        case INDEX_op_insn_start:
++        case INDEX_op_discard:
++        case INDEX_op_set_label:
++            continue;
++        default:
++            break;
++        }
++        if (previous != NB_OPS) {
++            madeira_se_tcti_perf_note_opcode_pair(
++                (uint16_t)previous, (uint16_t)op->opc,
++                tcg_op_defs[previous].name, tcg_op_defs[op->opc].name);
++        }
++        previous = op->opc;
++    }
++}
++
+ static void tcg_out_tb_start(TCGContext *s)
+ {
+     /*
+@@ -2176,6 +2199,7 @@
+         return;
+     }
+ 
++    madeira_se_tcti_perf_note_opcode_pairs(s);
+     madeira_se_tcti_perf_note_translation(s->gen_tb->icount);
+     tcg_out_gadget(s, gadget_tb_enter);
+     tcg_out64(s, (uint64_t)(uintptr_t)&madeira_se_tcti_perf_state);

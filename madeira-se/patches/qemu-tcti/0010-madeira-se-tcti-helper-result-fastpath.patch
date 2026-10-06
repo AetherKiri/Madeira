@@ -1,0 +1,41 @@
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -517,18 +517,16 @@
+ 
+                     # Perform our actual core code.
+                     f"bl _{slowpath_helper}",
+-
+-                    # Temporarily store our result in a register that won't get trashed.
+-                    "mov x27, x0",
+ 
+-                    # Restore our registers after our C call.
++                    # Restore our registers after our C call.  The helper
++                    # result stays in x0 across this epilogue.
+                     *C_CALL_EPILOGUE,
+ 
+                     # Finally, call our postscript...
+                     *postscript,
+ 
+                     # ... and place our results in the target register.
+-                    "mov Wd, w27" if is_32b else "mov Xd, x27"
++                    "mov Wd, w0" if is_32b else "mov Xd, x0"
+             )
+ 
+ 
+@@ -705,14 +703,9 @@
+     # ... perform the call itself ...
+     "blr x27",
+ 
+-    # Save the result of our call for later.
+-    "mov x27, x0",
+-
+-    # ... and restore our environment.
++    # Restore our environment.  The helper result remains in x0; the
++    # epilogue only touches the interpreter-owned registers.
+     *C_CALL_EPILOGUE,
+-
+-    # Restore our return value.
+-    "mov x0, x27"
+ )
+ 
+ # Branch to a given immediate address.

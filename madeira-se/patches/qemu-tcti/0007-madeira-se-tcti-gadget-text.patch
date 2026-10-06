@@ -1,0 +1,42 @@
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -92,24 +92,24 @@
+     # Fetch the files we'll be using for output.
+     c_file, h_file = _get_output_files()
+ 
+-    # Create our C/ASM framing.
++    # Declare the symbol for C tables and emit the body as file-scope
++    # assembly.  A naked C function makes Clang append a `brk #1` after the
++    # inline assembly.  Every TCTI gadget ends in an indirect branch or a
++    # return, so that trap is unreachable and only inflates the instruction
++    # cache.  File-scope assembly lets us keep the same private linkage while
++    # omitting the compiler-generated trap.
+     if export:
+-        print(f"__attribute__((naked)) void gadget_{name}(void);", file=h_file)
+-        print(f"__attribute__((naked)) void gadget_{name}(void)", file=c_file)
+-    else:
+-        print(f"static __attribute__((naked)) void gadget_{name}(void)", file=c_file)
+-
+-    print("{", file=c_file)
+-
+-    # Add the core gadget
+-    print("\tasm(", file=c_file)
++        print(f"void gadget_{name}(void);", file=h_file)
++    print(f"extern void gadget_{name}(void);", file=c_file)
++    print("__asm__(", file=c_file)
++    print("\t\".text\\n\"", file=c_file)
++    print("\t\".p2align 2\\n\"", file=c_file)
++    print(f"\t\".private_extern _gadget_{name}\\n\"", file=c_file)
++    print(f"\t\"_gadget_{name}:\\n\"", file=c_file)
+     for line in lines + EPILOGUE:
+-        print(f"\t\t\"{line} \\n\"", file=c_file)
++        print(f"\t\"{line} \\n\"", file=c_file)
+         instructions += 1
+-    print("\t);", file=c_file)
+-
+-    # End our framing.
+-    print("}\n", file=c_file)
++    print(");\n", file=c_file)
+ 
+ 
+ 

@@ -1,0 +1,68 @@
+--- a/tcg/aarch64-tcti/tcti-gadget-gen.py
++++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
+@@ -713,6 +713,17 @@
+ simple("br",
+     # Use our immediate argument as our new bytecode-pointer location.
+     "ldr x28, [x28]"
+ )
++
++# Follow a linked translation-block edge.  The stream stores two pointers:
++# the first gadget in the destination TB and the destination stream position
++# immediately after that gadget pointer.  Loading both together removes one
++# dependent stream load from the hot TB-chain path while keeping the stream
++# non-executable and patchable by QEMU's normal jump-linking code.
++simple("br_tb",
++    "ldp x27, x28, [x28]",
++    "br x27",
++    epilogue=False
++)
+ 
+ # Exit from a translation buffer execution.
+--- a/tcg/aarch64-tcti/tcg-target.c.inc
++++ b/tcg/aarch64-tcti/tcg-target.c.inc
+@@ -486,12 +486,15 @@
+ void tb_target_set_jmp_target(const TranslationBlock *tb, int n,
+                               uintptr_t jmp_rx, uintptr_t jmp_rw)
+ {
+-    /* Get a pointer to our immediate, which exists after a single pointer. */
++    /* Get a pointer to our two stream immediates. */
+     uintptr_t immediate_addr = jmp_rw;
+     uintptr_t addr = tb->jmp_target_addr[n];
+-
+-    /* Patch it to be match our target address. */
+-    qatomic_set((uint64_t *)immediate_addr, addr);
++    uintptr_t target_gadget = *(const uintptr_t *)addr;
++    uintptr_t target_body = addr + sizeof(uint64_t);
++
++    /* Publish the body first, then the gadget pointer. */
++    qatomic_set((uint64_t *)(immediate_addr + sizeof(uint64_t)), target_body);
++    qatomic_set((uint64_t *)immediate_addr, target_gadget);
+ }
+ 
+ 
+@@ -897,18 +900,15 @@
+ 
+ static void tcg_out_goto_tb(TCGContext *s, int which)
+ {
+-    // If we're using a direct jump, we'll emit a "relocation" that can be usd
+-    // to patch our gadget stream with the target address, later.
+-
+-    // Emit our gadget.
+-    tcg_out_gadget(s, gadget_br);
+-
+-    // Place our current instruction into our "relocation table", so it can
+-    // be patched once we know where the branch will target...
++    /* br_tb loads the destination gadget and stream body in one pair load. */
++    tcg_out_gadget(s, gadget_br_tb);
++
++    // Reserve two pointer-sized relocation slots.  They are patched once the
++    // destination is known; the reset target is the stream continuation below.
+     s->gen_tb->jmp_insn_offset[which] = tcg_current_code_size(s);
+ 
+-    // ... and emit our relocation.
+-    tcg_out64(s, which);
++    tcg_out64(s, 0);
++    tcg_out64(s, 0);
+ 
+     set_jmp_reset_offset(s, which);
+ }
