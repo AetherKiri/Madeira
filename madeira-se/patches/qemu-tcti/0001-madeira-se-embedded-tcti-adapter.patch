@@ -206,7 +206,7 @@ new file mode 100644
 index 0000000..d7bcf30
 --- /dev/null
 +++ b/system/madeira-se.c
-@@ -0,0 +1,876 @@
+@@ -0,0 +1,887 @@
 +/*
 + * Madeira-SE embedded x86/TCTI execution adapter
 + *

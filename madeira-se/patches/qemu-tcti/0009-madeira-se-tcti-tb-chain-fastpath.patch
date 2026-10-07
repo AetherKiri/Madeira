@@ -1,11 +1,6 @@
 --- a/tcg/aarch64-tcti/tcti-gadget-gen.py
 +++ b/tcg/aarch64-tcti/tcti-gadget-gen.py
-@@ -713,6 +713,17 @@
- simple("br",
-     # Use our immediate argument as our new bytecode-pointer location.
-     "ldr x28, [x28]"
- )
-+
+@@ -716,0 +717,10 @@
 +# Follow a linked translation-block edge.  The stream stores two pointers:
 +# the first gadget in the destination TB and the destination stream position
 +# immediately after that gadget pointer.  Loading both together removes one
@@ -16,8 +11,6 @@
 +    "br x27",
 +    epilogue=False
 +)
- 
- # Exit from a translation buffer execution.
 --- a/tcg/aarch64-tcti/tcg-target.c.inc
 +++ b/tcg/aarch64-tcti/tcg-target.c.inc
 @@ -486,12 +486,15 @@

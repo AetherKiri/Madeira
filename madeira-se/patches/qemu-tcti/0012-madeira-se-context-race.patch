@@ -1,10 +1,33 @@
+diff --git a/system/madeira-se.c b/system/madeira-se.c
 --- a/system/madeira-se.c
 +++ b/system/madeira-se.c
-@@ -581,7 +581,18 @@
-     unsigned int slice;
+@@ -56,6 +56,8 @@
+     const madeira_se_cpu_run_request_t *request;
+     madeira_se_x86_context_t *context;
+     madeira_se_cpu_run_result_t *result;
++    pthread_t caller_thread;
++    bool reuse_context;
+     int status;
+ } MadeiraSERun;
+ 
+@@ -72,8 +74,12 @@
+ static unsigned int madeira_se_mapping_serial;
+ static MadeiraSEQemuInstance *madeira_se_active_instance;
+ /* QEMU's shared-library adapter owns one CPU object.  Track which Wine
+- * thread's state is currently resident before honoring context reuse. */
++ * thread's state is currently resident before honoring context reuse.  The
++ * backend is called by many Wine threads, so instance identity alone is not
++ * enough to prove that the resident x86 state belongs to this caller. */
+ static MadeiraSEQemuInstance *madeira_se_context_instance;
++static pthread_t madeira_se_context_thread;
++static bool madeira_se_context_thread_valid;
+ 
+ int madeira_se_qemu_tcti_smoke(void);
+ const madeira_se_cpu_backend_t *madeira_se_qemu_tcti_backend(void);
+@@ -546,12 +552,22 @@
+     int64_t prepared_budget;
+     int64_t remaining_budget;
      int cpu_result;
-     bool interrupted = false;
--    bool reuse_context = run->reuse_context;
 +    /*
 +     * backend_run() computes the fast-path flag before queueing this
 +     * callback on QEMU's shared CPU.  Another Wine thread may run first and
@@ -12,7 +35,9 @@
 +     * the owner here, at the point where the CPU state is actually touched;
 +     * otherwise this thread would execute with the other thread's ESP/EIP.
 +     */
-+    bool reuse_context =
+     bool reuse_context =
+-        (run->request->flags & MADEIRA_SE_CPU_RUN_REUSE_CONTEXT) != 0 &&
+-        madeira_se_context_instance == instance;
 +        run->reuse_context &&
 +        madeira_se_context_instance == instance &&
 +        madeira_se_context_thread_valid &&
@@ -20,3 +45,56 @@
  
      if (qatomic_xchg(&instance->interrupted, false)) {
          madeira_se_context_instance = NULL;
++        madeira_se_context_thread_valid = false;
+         run->result->reason = MADEIRA_SE_CPU_EXIT_INTERRUPTED;
+         return;
+     }
+@@ -632,6 +648,8 @@
+ 
+     if (run->result->reason == MADEIRA_SE_CPU_EXIT_BUDGET) {
+         madeira_se_context_instance = instance;
++        madeira_se_context_thread = run->caller_thread;
++        madeira_se_context_thread_valid = true;
+         if (reuse_context) {
+             run->result->reserved[0] |= MADEIRA_SE_CPU_RESULT_CONTEXT_UNCHANGED;
+         } else {
+@@ -640,6 +658,7 @@
+         }
+     } else {
+         madeira_se_context_instance = NULL;
++        madeira_se_context_thread_valid = false;
+         madeira_se_export_context(cpu, run->context, instance->xsave_buffer,
+                                   instance->xsave_buffer_size);
+     }
+@@ -692,6 +711,8 @@
+         .request = request,
+         .context = context,
+         .result = result,
++        .caller_thread = pthread_self(),
++        .reuse_context = false,
+         .status = 0,
+     };
+ 
+@@ -701,6 +722,14 @@
+         return -1;
+     }
+     bql_lock();
++    /* A reused QEMU CPU context is valid only for consecutive slices from
++     * the same Wine thread.  Other threads may enter this shared backend
++     * while the first thread is blocked in a syscall or callback. */
++    run.reuse_context =
++        (request->flags & MADEIRA_SE_CPU_RUN_REUSE_CONTEXT) != 0 &&
++        madeira_se_context_instance == opaque &&
++        madeira_se_context_thread_valid &&
++        pthread_equal(madeira_se_context_thread, run.caller_thread);
+     if (((MadeiraSEQemuInstance *)opaque)->stats_enabled) {
+         gint64 started = g_get_monotonic_time();
+         run_on_cpu(first_cpu, madeira_se_run_on_cpu,
+@@ -817,6 +846,7 @@
+     }
+     if (madeira_se_context_instance == instance) {
+         madeira_se_context_instance = NULL;
++        madeira_se_context_thread_valid = false;
+     }
+     bql_unlock();
+     if (instance->stats_enabled) {

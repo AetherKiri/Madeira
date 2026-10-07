@@ -1,0 +1,190 @@
+diff --git a/system/madeira-se.c b/system/madeira-se.c
+--- a/system/madeira-se.c
++++ b/system/madeira-se.c
+@@ -22,6 +22,7 @@
+ #include "qemu/main-loop.h"
+ #include "qemu/rcu.h"
+ #include "system/cpus.h"
++#include "system/cpu-timers.h"
+ #include "tcg/helper-tcg.h"
+ #include "accel/tcg/tcg-accel-ops-icount.h"
+ 
+@@ -93,6 +94,30 @@
+         && strcasecmp(value, "off") != 0
+         && strcasecmp(value, "no") != 0
+         && strcasecmp(value, "false") != 0;
++}
++
++/* Keep several instruction budgets resident in the QEMU CPU thread before
++ * returning to Wine.  This removes repeated run_on_cpu, context save/restore,
++ * and condition-variable handshakes while retaining the dispatcher page
++ * checks that stop at every syscall or Unix call. */
++static unsigned int madeira_se_cpu_batch_slices(void)
++{
++    static int initialized;
++    static unsigned int slices;
++    const char *value;
++    char *end;
++    unsigned long parsed;
++
++    if (initialized) return slices;
++    initialized = 1;
++    slices = 1;
++    value = getenv("MADEIRA_SE_CPU_BATCH_SLICES");
++    if (!value || !*value) return slices;
++    errno = 0;
++    parsed = strtoul(value, &end, 10);
++    if (!errno && end != value && !*end && parsed >= 1 && parsed <= 16)
++        slices = (unsigned int)parsed;
++    return slices;
+ }
+ 
+ static bool madeira_se_architecture_supported(madeira_se_architecture_t architecture)
+@@ -367,6 +392,16 @@
+ static void madeira_se_flush_translations(void)
+ {
+     if (first_cpu != NULL) {
++        /*
++         * The embedded adapter changes the AddressSpace from a Wine thread
++         * after a guest page fault.  Unlike a normal SoftMMU memory-listener
++         * transaction, this path does not pass through tcg_commit(), so the
++         * CPU can retain a negative/read-only TLB entry for the faulting page.
++         * Flush both translated blocks and the per-CPU TLB before retrying the
++         * instruction; otherwise a successful lazy map can fault a second
++         * time and corrupt the guest exception context.
++         */
++        tlb_flush(first_cpu);
+         tb_flush(first_cpu);
+     }
+ }
+@@ -551,7 +586,11 @@
+     CPUX86State *env = &cpu->env;
+     int64_t prepared_budget;
+     int64_t remaining_budget;
++    uint64_t instructions_executed = 0;
++    unsigned int batch_slices = madeira_se_cpu_batch_slices();
++    unsigned int slice;
+     int cpu_result;
++    bool interrupted = false;
+     /*
+      * backend_run() computes the fast-path flag before queueing this
+      * callback on QEMU's shared CPU.  Another Wine thread may run first and
+@@ -576,32 +615,56 @@
+         madeira_se_import_context(cpu, run->context, instance->xsave_buffer,
+                                   instance->xsave_buffer_size);
+     }
+-    cs->halted = false;
+-    cs->exception_index = -1;
+-    cs->madeira_se_user_mode = true;
+-    qatomic_set(&cs->exit_request, 0);
+-    qatomic_set(&cs->interrupt_request, 0);
+-    qatomic_set(&cs->neg.icount_decr.u16.high, 0);
+     cs->madeira_se_syscall_dispatcher = run->request->syscall_dispatcher;
+     cs->madeira_se_unix_call_dispatcher = run->request->unix_call_dispatcher;
+     cs->madeira_se_dispatchers_enabled = true;
+ 
+     qatomic_set(&madeira_se_active_instance, instance);
++    /* Keep the BQL released across consecutive clean budget exits.  The CPU
++     * execution loop already runs without the lock; reacquiring it between
++     * slices only serializes the same TCTI thread with itself. */
+     bql_unlock();
+-    icount_prepare_for_run(cs, (int64_t)MIN(run->request->max_instructions,
+-                                            (uint64_t)INT64_MAX));
+-    prepared_budget = cs->icount_budget;
+-    do {
+-        cpu_result = cpu_exec(cs);
+-        if (cpu_result == EXCP_ATOMIC) {
+-            cpu_exec_step_atomic(cs);
+-        }
+-    } while (cpu_result == EXCP_ATOMIC);
+-    remaining_budget = cs->neg.icount_decr.u16.low + cs->icount_extra;
+-    run->result->instructions_executed =
+-        (uint64_t)MAX((int64_t)0, prepared_budget - remaining_budget);
+-    icount_process_data(cs);
+-    bql_lock();
++    for (slice = 0; slice < batch_slices; ++slice) {
++        cs->halted = false;
++        cs->exception_index = -1;
++        cs->madeira_se_user_mode = true;
++        qatomic_set(&cs->exit_request, 0);
++        qatomic_set(&cs->interrupt_request, 0);
++        qatomic_set(&cs->neg.icount_decr.u16.high, 0);
++
++        icount_prepare_for_run(cs, (int64_t)MIN(run->request->max_instructions,
++                                                (uint64_t)INT64_MAX));
++        prepared_budget = cs->icount_budget;
++        do {
++            cpu_result = cpu_exec(cs);
++            if (cpu_result == EXCP_ATOMIC) {
++                cpu_exec_step_atomic(cs);
++            }
++        } while (cpu_result == EXCP_ATOMIC);
++        remaining_budget = cs->neg.icount_decr.u16.low + cs->icount_extra;
++        instructions_executed +=
++            (uint64_t)MAX((int64_t)0, prepared_budget - remaining_budget);
++        icount_process_data(cs);
++
++        /* A dispatcher, exception, halt, or explicit interrupt must be
++         * returned to Wine immediately.  Only a clean instruction-budget
++         * exit can safely continue in the resident QEMU state. */
++        if (env->eip == run->request->syscall_dispatcher ||
++            env->eip == run->request->unix_call_dispatcher ||
++            cpu_result == EXCP_HLT || cpu_result == EXCP_HALTED ||
++            (cpu_result >= 0 && cpu_result < EXCP_INTERRUPT)) {
++            bql_lock();
++            break;
++        }
++        if (qatomic_xchg(&instance->interrupted, false)) {
++            interrupted = true;
++            bql_lock();
++            break;
++        }
++    }
++    if (slice == batch_slices)
++        bql_lock();
++    run->result->instructions_executed = instructions_executed;
+     qatomic_cmpxchg(&madeira_se_active_instance, instance, NULL);
+     cs->madeira_se_dispatchers_enabled = false;
+ 
+@@ -640,22 +703,21 @@
+         run->result->exception_vector = (uint32_t)cpu_result;
+         run->result->exception_error_code = (uint32_t)env->error_code;
+         run->result->fault_address = env->cr[2];
+-    } else if (qatomic_xchg(&instance->interrupted, false)) {
++    } else if (interrupted || qatomic_xchg(&instance->interrupted, false)) {
+         run->result->reason = MADEIRA_SE_CPU_EXIT_INTERRUPTED;
+     } else {
+         run->result->reason = MADEIRA_SE_CPU_EXIT_BUDGET;
+     }
+ 
++    /* A budget exit can be followed by another Wine thread.  Export even
++     * when this slice reused the resident state, so the first thread has a
++     * complete context to import when it next owns the shared CPU. */
+     if (run->result->reason == MADEIRA_SE_CPU_EXIT_BUDGET) {
+         madeira_se_context_instance = instance;
+         madeira_se_context_thread = run->caller_thread;
+         madeira_se_context_thread_valid = true;
+-        if (reuse_context) {
+-            run->result->reserved[0] |= MADEIRA_SE_CPU_RESULT_CONTEXT_UNCHANGED;
+-        } else {
+-            madeira_se_export_context(cpu, run->context, instance->xsave_buffer,
+-                                      instance->xsave_buffer_size);
+-        }
++        madeira_se_export_context(cpu, run->context, instance->xsave_buffer,
++                                  instance->xsave_buffer_size);
+     } else {
+         madeira_se_context_instance = NULL;
+         madeira_se_context_thread_valid = false;
+@@ -876,10 +938,12 @@
+ #ifdef TARGET_X86_64
+         .name = "qemu-x86_64-tcti",
+         .capabilities = MADEIRA_SE_CPU_CAP_NO_RUNTIME_CODEGEN |
++                        MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE |
+                         MADEIRA_SE_CPU_CAP_X86_64,
+ #else
+         .name = "qemu-i386-tcti",
+         .capabilities = MADEIRA_SE_CPU_CAP_NO_RUNTIME_CODEGEN |
++                        MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE |
+                         MADEIRA_SE_CPU_CAP_X86_32,
+ #endif
+         .create = madeira_se_backend_create,

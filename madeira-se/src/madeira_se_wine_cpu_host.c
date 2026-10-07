@@ -249,6 +249,7 @@ static int32_t dispatch_thread_init(
     madeira_se_wine_memory_event_t *event;
     madeira_se_memory_t memory;
     madeira_se_status_t status;
+    int replay_memory = 1;
 
     thread = calloc(1u, sizeof(*thread));
     if (thread == NULL) return (int32_t)MADEIRA_SE_E_OUT_OF_MEMORY;
@@ -264,6 +265,18 @@ static int32_t dispatch_thread_init(
         free(thread);
         return (int32_t)MADEIRA_SE_E_NOT_READY;
     }
+    if ((host->backend.capabilities
+         & MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE) != 0u) {
+        madeira_se_wine_thread_t *existing;
+        for (existing = host->threads; existing != NULL;
+             existing = existing->next) {
+            if (existing->process_handle == process->handle
+                && !existing->terminating) {
+                replay_memory = 0;
+                break;
+            }
+        }
+    }
     memory.userdata = process;
     status = madeira_se_cpu_create(&host->backend, process->architecture,
                                    &memory, &thread->cpu);
@@ -272,7 +285,11 @@ static int32_t dispatch_thread_init(
         free(thread);
         return (int32_t)status;
     }
-    for (event = process->memory_events; event != NULL; event = event->next) {
+    /* Replaying old protections into a live shared address space temporarily
+     * restores stale mappings and repeatedly rebuilds QEMU's RAM topology.
+     * Only its first CPU needs the history accumulated before thread init. */
+    for (event = replay_memory ? process->memory_events : NULL;
+         event != NULL; event = event->next) {
         status = madeira_se_cpu_notify_memory(
             thread->cpu, event->event, event->guest_address, event->size,
             event->protection);
@@ -345,8 +362,12 @@ static madeira_se_status_t retain_process_threads(
         return MADEIRA_SE_E_NOT_READY;
     }
     for (thread = host->threads; thread != NULL; thread = thread->next)
-        if (thread->process_handle == process_handle && !thread->terminating)
+        if (thread->process_handle == process_handle && !thread->terminating) {
             count++;
+            if ((host->backend.capabilities
+                 & MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE) != 0u)
+                break;
+        }
     if (count == 0u) {
         (void)pthread_mutex_unlock(&host->mutex);
         return MADEIRA_SE_OK;
@@ -361,6 +382,7 @@ static madeira_se_status_t retain_process_threads(
             continue;
         thread->active_calls++;
         threads[index++] = thread;
+        if (index == count) break;
     }
     (void)pthread_mutex_unlock(&host->mutex);
     *out_threads = threads;

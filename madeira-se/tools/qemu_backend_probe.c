@@ -308,6 +308,79 @@ static int run_performance_probe(madeira_se_cpu_t *cpu, test_memory_t *memory,
     return 0;
 }
 
+/* A second Wine thread can take QEMU's shared CPU between slices. Every budget
+ * exit therefore exports the resident state to the caller before the next
+ * thread imports its own state. */
+static int run_context_switch_probe(madeira_se_cpu_t *cpu,
+                                    test_memory_t *memory,
+                                    madeira_se_architecture_t architecture,
+                                    const madeira_se_cpu_backend_t *backend,
+                                    const madeira_se_memory_t *memory_interface)
+{
+    madeira_se_cpu_t *other = NULL;
+    madeira_se_cpu_run_request_t request = {
+        .version = MADEIRA_SE_CPU_ABI_VERSION,
+        .max_instructions = 16,
+        .syscall_dispatcher = TEST_GUEST_BASE + TEST_SYSCALL_OFFSET,
+        .unix_call_dispatcher = TEST_GUEST_BASE + TEST_UNIX_OFFSET,
+    };
+    madeira_se_cpu_run_result_t result = {
+        .version = MADEIRA_SE_CPU_ABI_VERSION,
+    };
+    madeira_se_x86_context_t first, second;
+    const int32_t displacement = TEST_SYSCALL_OFFSET - 5;
+    int status = -1;
+
+    if (madeira_se_cpu_create(backend, architecture, memory_interface, &other)
+            != MADEIRA_SE_OK)
+        return -1;
+    memory->data[0] = 0xff; /* inc eax; jmp back to inc */
+    memory->data[1] = 0xc0;
+    memory->data[2] = 0xeb;
+    memory->data[3] = 0xfc;
+    initialize_context(&first, architecture, TEST_GUEST_BASE);
+    initialize_context(&second, architecture, TEST_GUEST_BASE);
+    second.gpr[MADEIRA_SE_X86_RAX] = 0x100u;
+    if (madeira_se_cpu_invalidate(cpu, TEST_GUEST_BASE, 5) != MADEIRA_SE_OK ||
+        madeira_se_cpu_run(cpu, &request, &first, &result) != MADEIRA_SE_OK ||
+        result.reason != MADEIRA_SE_CPU_EXIT_BUDGET)
+        goto done;
+    request.flags = MADEIRA_SE_CPU_RUN_REUSE_CONTEXT;
+    if (madeira_se_cpu_run(cpu, &request, &first, &result) != MADEIRA_SE_OK ||
+        result.reason != MADEIRA_SE_CPU_EXIT_BUDGET)
+        goto done;
+    request.flags = 0u;
+    if (madeira_se_cpu_run(other, &request, &second, &result) != MADEIRA_SE_OK ||
+        result.reason != MADEIRA_SE_CPU_EXIT_BUDGET)
+        goto done;
+
+    /* Stop both threads at the dispatcher, forcing a context export so we
+     * can observe all work performed before their shared-CPU switch. */
+    memory->data[0] = 0xe9;
+    memcpy(memory->data + 1, &displacement, sizeof(displacement));
+    if (madeira_se_cpu_invalidate(cpu, TEST_GUEST_BASE, 5) != MADEIRA_SE_OK)
+        goto done;
+    request.flags = MADEIRA_SE_CPU_RUN_REUSE_CONTEXT;
+    if (madeira_se_cpu_run(cpu, &request, &first, &result) != MADEIRA_SE_OK ||
+        result.reason != MADEIRA_SE_CPU_EXIT_SYSCALL ||
+        first.gpr[MADEIRA_SE_X86_RAX] != 16u) {
+        fprintf(stderr, "context switch lost first thread progress: eax=%#llx expected=0x10 reason=%u\n",
+                (unsigned long long)first.gpr[MADEIRA_SE_X86_RAX], result.reason);
+        goto done;
+    }
+    if (madeira_se_cpu_run(other, &request, &second, &result) != MADEIRA_SE_OK ||
+        result.reason != MADEIRA_SE_CPU_EXIT_SYSCALL ||
+        second.gpr[MADEIRA_SE_X86_RAX] != 0x108u) {
+        fprintf(stderr, "context switch lost second thread progress: eax=%#llx expected=0x108 reason=%u\n",
+                (unsigned long long)second.gpr[MADEIRA_SE_X86_RAX], result.reason);
+        goto done;
+    }
+    status = 0;
+done:
+    madeira_se_cpu_destroy(other);
+    return status;
+}
+
 static int run_budget_probe(madeira_se_cpu_t *cpu, test_memory_t *memory,
                             madeira_se_architecture_t architecture)
 {
@@ -340,9 +413,9 @@ static int run_budget_probe(madeira_se_cpu_t *cpu, test_memory_t *memory,
         return -1;
     }
 
-    /* A consecutive budget slice may stay resident in QEMU's CPU object.
-     * Deliberately poison the caller's copy to prove that the backend does
-     * not import it while the reuse contract is active. */
+    /* A consecutive budget slice may stay resident in QEMU's CPU object. The
+     * caller's context is still refreshed so a later thread can safely take
+     * ownership of that shared CPU. */
     request.flags = MADEIRA_SE_CPU_RUN_REUSE_CONTEXT;
     context.rip = TEST_GUEST_BASE + 1;
     context.gpr[MADEIRA_SE_X86_RAX] = UINT64_C(0xdeadbeef);
@@ -350,9 +423,8 @@ static int run_budget_probe(madeira_se_cpu_t *cpu, test_memory_t *memory,
     result.version = MADEIRA_SE_CPU_ABI_VERSION;
     if (madeira_se_cpu_run(cpu, &request, &context, &result) != MADEIRA_SE_OK
         || result.reason != MADEIRA_SE_CPU_EXIT_BUDGET
-        || (result.reserved[0] & MADEIRA_SE_CPU_RESULT_CONTEXT_UNCHANGED) == 0u
-        || context.rip != TEST_GUEST_BASE + 1
-        || context.gpr[MADEIRA_SE_X86_RAX] != UINT64_C(0xdeadbeef)) {
+        || (result.reserved[0] & MADEIRA_SE_CPU_RESULT_CONTEXT_UNCHANGED) != 0u
+        || context.gpr[MADEIRA_SE_X86_RAX] == UINT64_C(0xdeadbeef)) {
         fprintf(stderr,
                 "budget reuse probe mismatch: reason=%u flags=%#llx rip=%#llx eax=%#llx\n",
                 result.reason, (unsigned long long)result.reserved[0],
@@ -551,6 +623,8 @@ int main(int argc, char **argv)
         || run_unix_call_probe(cpu, &memory, architecture) != 0
         || run_invalidation_probe(cpu, &memory, architecture) != 0
         || run_budget_probe(cpu, &memory, architecture) != 0
+        || run_context_switch_probe(cpu, &memory, architecture, &backend,
+                                    &memory_interface) != 0
         || run_protection_probe(cpu, &memory, architecture) != 0
         || run_exception_probe(cpu, &memory, architecture) != 0
         || run_performance_probe(cpu, &memory, architecture) != 0) {

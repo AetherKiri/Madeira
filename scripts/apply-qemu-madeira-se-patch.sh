@@ -112,6 +112,13 @@ for patch_file in "${patches[@]}"; do
             && grep -q "pthread_equal(madeira_se_context_thread, run->caller_thread)" \
                 "$QEMU_SOURCE/system/madeira-se.c"; then
         echo "Madeira-SE TCTI context-race patch is already applied: $patch_name"
+    elif [[ "$patch_name" == "0013-madeira-se-shared-cpu-state.patch" ]] \
+            && grep -q "madeira_se_cpu_batch_slices" \
+                "$QEMU_SOURCE/system/madeira-se.c" \
+            && grep -q "MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE" \
+                "$QEMU_SOURCE/system/madeira-se.c" \
+            && grep -q "Export even" "$QEMU_SOURCE/system/madeira-se.c"; then
+        echo "Madeira-SE shared CPU-state patch is already applied: $patch_name"
     else
         echo "error: QEMU checkout is neither pristine nor patched as expected" >&2
         echo "patch: $patch_name" >&2

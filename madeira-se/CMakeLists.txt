@@ -130,6 +130,9 @@ if(MADEIRA_SE_BUILD_TESTS)
   )
   target_link_libraries(madeira-se-wine-layout-tests PRIVATE madeira_se_core)
   target_compile_features(madeira-se-wine-layout-tests PRIVATE c_std_11)
+  target_include_directories(madeira-se-wine-layout-tests PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/../wine/include"
+  )
 
   add_executable(madeira-se-wine-cpu-tests
     tests/test_wine_cpu.c

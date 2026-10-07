@@ -537,6 +537,87 @@ static int test_rejects_codegen_backend(void)
     return 0;
 }
 
+static int test_shared_address_space_deduplicates_memory_events(void)
+{
+    struct fake_backend state;
+    madeira_se_cpu_backend_t backend;
+    madeira_se_wine_cpu_host_t *host = NULL;
+    const madeira_se_wine_cpu_endpoint_t *endpoint;
+    madeira_se_wine_cpu_process_init_message_t process;
+    madeira_se_wine_cpu_thread_init_message_t first;
+    madeira_se_wine_cpu_thread_init_message_t second;
+    madeira_se_wine_cpu_memory_message_t memory;
+    madeira_se_wine_cpu_process_term_message_t process_term;
+
+    memset(&state, 0, sizeof(state));
+    memset(&backend, 0, sizeof(backend));
+    backend.version = MADEIRA_SE_CPU_ABI_VERSION;
+    backend.name = "shared-test-tcti";
+    backend.capabilities = MADEIRA_SE_CPU_CAP_NO_RUNTIME_CODEGEN
+                         | MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE
+                         | MADEIRA_SE_CPU_CAP_X86_32;
+    backend.userdata = &state;
+    backend.create = fake_create;
+    backend.run = fake_run;
+    backend.interrupt = fake_interrupt;
+    backend.memory_event = fake_memory_event;
+    backend.invalidate = fake_invalidate;
+    backend.destroy = fake_destroy;
+
+    CHECK(madeira_se_wine_cpu_host_create(&backend, &host) == MADEIRA_SE_OK);
+    endpoint = madeira_se_wine_cpu_host_endpoint(host);
+    init_message(&process, sizeof(process));
+    process.architecture = MADEIRA_SE_ARCH_X86_32;
+    process.flags = MADEIRA_SE_WINE_CPU_PROCESS_DIRECT_ADDRESS_SPACE;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_PROCESS_INIT,
+                                       &process, sizeof(process)) == MADEIRA_SE_OK);
+
+    init_message(&memory, sizeof(memory));
+    memory.process_handle = process.process_handle;
+    memory.event = MADEIRA_SE_CPU_MEMORY_MAP;
+    memory.guest_address = 0x100000u;
+    memory.size = 0x1000u;
+    memory.protection = MADEIRA_SE_MEMORY_READ | MADEIRA_SE_MEMORY_EXECUTE;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_MEMORY_EVENT,
+                                       &memory, sizeof(memory)) == MADEIRA_SE_OK);
+
+    init_message(&first, sizeof(first));
+    first.process_handle = process.process_handle;
+    first.thread_id = 1u;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_THREAD_INIT,
+                                       &first, sizeof(first)) == MADEIRA_SE_OK);
+    CHECK(state.creates == 1u && state.memory_events == 1u);
+
+    init_message(&second, sizeof(second));
+    second.process_handle = process.process_handle;
+    second.thread_id = 2u;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_THREAD_INIT,
+                                       &second, sizeof(second)) == MADEIRA_SE_OK);
+    CHECK(state.creates == 2u && state.memory_events == 1u);
+
+    memory.event = MADEIRA_SE_CPU_MEMORY_PROTECT;
+    memory.guest_address = 0x200000u;
+    memory.protection = MADEIRA_SE_MEMORY_READ | MADEIRA_SE_MEMORY_WRITE;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_MEMORY_EVENT,
+                                       &memory, sizeof(memory)) == MADEIRA_SE_OK);
+    CHECK(state.memory_events == 2u);
+
+    init_message(&process_term, sizeof(process_term));
+    process_term.process_handle = process.process_handle;
+    CHECK(madeira_se_wine_cpu_dispatch(endpoint,
+                                       MADEIRA_SE_WINE_CPU_PROCESS_TERM,
+                                       &process_term, sizeof(process_term))
+          == MADEIRA_SE_OK);
+    CHECK(state.destroys == 2u);
+    madeira_se_wine_cpu_host_destroy(host);
+    return 0;
+}
+
 int main(void)
 {
     CHECK(test_host_lifecycle() == 0);
@@ -544,6 +625,7 @@ int main(void)
     CHECK(test_biased_address_space() == 0);
     CHECK(test_split_low_4g_address_space() == 0);
     CHECK(test_rejects_codegen_backend() == 0);
+    CHECK(test_shared_address_space_deduplicates_memory_events() == 0);
     puts("Madeira-SE Wine CPU host tests passed");
     return 0;
 }

@@ -6,6 +6,7 @@
  */
 
 #include "madeira_se_wine.h"
+#include "wine/madeira_se.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -168,11 +169,26 @@ static int test_layout_validation(void)
     return 0;
 }
 
+static int test_guest_callback_handles(void)
+{
+    const uint32_t winproc_handle = UINT32_C(0xffff0016);
+    const uint32_t guest_function = UINT32_C(0x00401234);
+    void *handle = madeira_se_wow64_guest_callback_to_host( winproc_handle );
+    void *function = madeira_se_wow64_guest_callback_to_host( guest_function );
+
+    CHECK( madeira_se_wow64_host_to_guest( handle ) == winproc_handle );
+    CHECK( madeira_se_wow64_host_to_guest( function ) == guest_function );
+    CHECK( (uintptr_t)handle == (uintptr_t)winproc_handle );
+    CHECK( (uintptr_t)function == (uintptr_t)madeira_se_wow64_guest_to_host( guest_function ) );
+    return 0;
+}
+
 int main(void)
 {
     CHECK(test_x86_32_layout() == 0);
     CHECK(test_x86_64_layout() == 0);
     CHECK(test_layout_validation() == 0);
+    CHECK(test_guest_callback_handles() == 0);
     puts("Madeira-SE Wine layout tests passed");
     return 0;
 }

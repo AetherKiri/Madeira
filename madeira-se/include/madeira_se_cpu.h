@@ -169,6 +169,11 @@ enum {
     MADEIRA_SE_CPU_CAP_NO_RUNTIME_CODEGEN = 1u << 0,
     MADEIRA_SE_CPU_CAP_X86_32 = 1u << 1,
     MADEIRA_SE_CPU_CAP_X86_64 = 1u << 2,
+    /* Instances created with the same memory provider share mappings and
+     * translated-code invalidations while at least one instance is alive.
+     * The host must apply process memory changes once and must not replay
+     * historical MAP/UNMAP/PROTECT events when adding another thread. */
+    MADEIRA_SE_CPU_CAP_SHARED_ADDRESS_SPACE = 1u << 3,
 };
 
 typedef int (*madeira_se_cpu_backend_create_fn)(void *userdata,
